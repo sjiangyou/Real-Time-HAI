@@ -283,20 +283,23 @@ def train_models(models, train_data, test_data):
     os.makedirs("OUTPUT", exist_ok=True)
 
     batches = [1, 2, 4, 8, 16]
-    for id, model in enumerate(models):
-        model.compile(
-            optimizer="adam",
-            loss=tf.keras.losses.MeanAbsoluteError(),
-            metrics=["mae", "mse"],
-        )
-        for bsize in batches:
+    for bsize in batches:
+        for id, model in enumerate(models):
+            model.compile(
+                optimizer="adam",
+                loss=tf.keras.losses.MeanAbsoluteError(),
+                metrics=["mae", "mse"],
+            )
             print(f"Training model {id + 1} with batch size {bsize}.")
             model.fit(
                 [train_data[0], train_data[1]],
                 train_data[2],
-                epochs=10,
+                epochs=50,
                 batch_size=bsize,
-                callbacks=[OutputPredictions(bsize, id + 1)],
+                callbacks=[
+                    OutputPredictions(bsize, id + 1),
+                    keras.callbacks.EarlyStopping(monitor="loss", patience=10),
+                ],
             )
 
 
