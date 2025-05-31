@@ -1,39 +1,53 @@
-setwd('~/Programs/Real_Time_HAI/')
+here::i_am("HIECNN/CODE/Model_Prep.R")
+library(here)
+setwd(here())
 options(scipen = 999)
-trainend <- 2018000000
 
-all_data <- read.csv('BRTK_SHIPS_2000to2019_IMERG_OK_Request_2023_FINAL.csv')
-all_data <- all_data[, 1:14]
-all_data[all_data == -999] <- NA
-all_data <- all_data[complete.cases(all_data), ]
+main <- function() {
+    train_end <- 2018
+    train_end <- as.numeric(paste0(train_end, "000000"))
 
-train <- all_data[all_data$DATE < trainend, ]
-test <- all_data[all_data$DATE >= trainend, ]
+    all_data <- process_data()
+    train <- all_data[all_data$DATE < train_end, ]
+    test <- all_data[all_data$DATE >= train_end, ]
 
-doresample <- function(d, c, n){
-  t <- d[d$CAT == c, ]
-  if(nrow(t) < n){
-    t2 <- t[sample(1:nrow(t), n-nrow(t), replace = T),]
-    t <- rbind(t,t2)
-  }
-  return(t)
+    train$CAT <- ifelse(train$VMAX <= 33, "TD",
+        ifelse(train$VMAX <= 63, "TS",
+            ifelse(train$VMAX <= 95, "Min", "Maj")))
+
+    test$CAT <- ifelse(test$VMAX <= 33, "TD",
+        ifelse(test$VMAX <= 63, "TS",
+            ifelse(test$VMAX <= 95, "Min", "Maj")))
+
+    train_resample <- do.call(rbind,
+        lapply(unique(train$CAT),
+            function(y) doresample(train, y, max(table(train$CAT)))))
+
+    print(paste0("Training data size: ", nrow(train)))
+    print(paste0("Testing data size: ", nrow(test)))
+
+    dir.create("HIECNN/IMERG/DEV", recursive = TRUE, showWarnings = FALSE)
+
+    write.csv(train, "HIECNN/IMERG/DEV/ALL_TRAIN_DATA.csv")
+    write.csv(test, "HIECNN/IMERG/DEV/ALL_TEST_DATA.csv")
+    write.csv(train_resample, "HIECNN/IMERG/DEV/ALL_TRAIN_DATA_RESAMPLE.csv")
 }
 
-train$CAT <- ifelse(train$VMAX <= 33, "TD", 
-                      ifelse(train$VMAX <= 63, "TS", 
-                            ifelse(train$VMAX <= 95, "Min", "Maj")))
+process_data <- function() {
+    all_data <- read.csv("BRTK_SHIPS_2000to2019_IMERG_OK_Request_2023_FINAL.csv")
+    all_data <- all_data[, 1:14]
+    all_data[all_data == -999] <- NA
+    all_data <- all_data[complete.cases(all_data), ]
+    return(all_data)
+}
 
-test$CAT <- ifelse(test$VMAX <= 33, "TD", 
-                      ifelse(test$VMAX <= 63, "TS", 
-                            ifelse(test$VMAX <= 95, "Min", "Maj")))
+doresample <- function(data, category, number) {
+    t <- data[data$CAT == category, ]
+    if (nrow(t) < number) {
+        t2 <- t[sample(seq_len(nrow(t)), number - nrow(t), replace = TRUE), ]
+        t <- rbind(t, t2)
+    }
+    return(t)
+}
 
-train_resample <- do.call(rbind, lapply(unique(train$CAT), function(y) doresample(train,y, max(table(train$CAT)))))
-nrow(train_resample[train_resample$CAT == 'TD', ])
-nrow(train_resample[train_resample$CAT == 'TS', ])
-nrow(train_resample[train_resample$CAT == 'Min', ])
-nrow(train_resample[train_resample$CAT == 'Maj', ])
-
-
-write.csv(train, 'HIECNN/IMERG/DEV/ALL_TRAIN_DATA.csv')
-write.csv(test, 'HIECNN/IMERG/DEV/ALL_TEST_DATA.csv')
-write.csv(train_resample, 'HIECNN/IMERG/DEV/ALL_TRAIN_DATA_RESAMPLE.csv')
+main()
