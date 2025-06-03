@@ -10,8 +10,8 @@
 .Rhistory
 .DS_Store
 **/.ipynb_checkpoints
-**/MODELS
-**/OUTPUT
+**/MODELS*
+**/OUTPUT*
 **/IMERG
 **/IMERG_CSV
 pyvenv.cfg
