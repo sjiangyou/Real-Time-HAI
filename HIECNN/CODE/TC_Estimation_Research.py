@@ -259,7 +259,8 @@ def train_models(models, train_data, test_data):
         # pass
 
         def on_epoch_end(self, epoch, logs=None):
-            mae, rmse = logs["mae"], logs["mse"] ** 0.5
+            results = self.model.evaluate([test_data[0], test_data[1]], test_data[2])
+            mae, rmse = results[0], results[2] ** 0.5
             predictions = model.predict([test_data[0], test_data[1]])
             predictions = np.average(predictions, axis=1)
             self.write_results(
@@ -301,6 +302,7 @@ def train_models(models, train_data, test_data):
                     keras.callbacks.EarlyStopping(monitor="loss", patience=10),
                 ],
             )
+            tf.keras.backend.clear_session(free_memory=True)
 
 
 if __name__ == "__main__":
