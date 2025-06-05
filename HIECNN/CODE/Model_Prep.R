@@ -28,9 +28,9 @@ main <- function() {
 
     dir.create("HIECNN/IMERG/DEV", recursive = TRUE, showWarnings = FALSE)
 
-    write.csv(train, "HIECNN/IMERG/DEV/ALL_TRAIN_DATA.csv")
-    write.csv(test, "HIECNN/IMERG/DEV/ALL_TEST_DATA.csv")
-    write.csv(train_resample, "HIECNN/IMERG/DEV/ALL_TRAIN_DATA_RESAMPLE.csv")
+    write.csv(train, "HIECNN/IMERG/DEV/ALL_TRAIN_DATA.csv", row.names = FALSE)
+    write.csv(test, "HIECNN/IMERG/DEV/ALL_TEST_DATA.csv", row.names = FALSE)
+    write.csv(train_resample, "HIECNN/IMERG/DEV/ALL_TRAIN_DATA_RESAMPLE.csv", row.names = FALSE)
 }
 
 process_data <- function() {
