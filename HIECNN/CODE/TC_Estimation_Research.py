@@ -271,14 +271,17 @@ def train_models(models, train_data, test_data):
             with open(f"OVERALL_RESULTS.csv", "a") as f:
                 f.write(f"{self.number},{epoch + 1},{self.batch_size},{mae},{rmse}\n")
             tf.keras.models.save_model(
-                self.model, f"MODELS/MODEL{self.number}_EPOCHS{epoch + 1}_BATCH{self.batch_size}"
+                self.model,
+                f"MODELS/MODEL{self.number}_EPOCHS{epoch + 1}_BATCH{self.batch_size}",
             )
 
         def write_results(self, test_csv_path, predictions, epoch):
             os.chdir(Path(__file__).parent.parent)
             csv = pd.read_csv(test_csv_path)
             csv["preds"] = predictions
-            csv.to_csv(f"OUTPUT/MODEL{self.number}_RESULTS{epoch}_{self.batch_size}.csv")
+            csv.to_csv(
+                f"OUTPUT/MODEL{self.number}_RESULTS{epoch}_{self.batch_size}.csv"
+            )
 
     os.makedirs("MODELS", exist_ok=True)
     os.makedirs("OUTPUT", exist_ok=True)
