@@ -250,10 +250,10 @@ def define_models():
 
 def train_models(models, train_data, test_data):
     class OutputPredictions(keras.callbacks.Callback):
-        def __init__(self, batch_size, id):
+        def __init__(self, batch_size, number):
             super().__init__()
             self.batch_size = batch_size
-            self.id = id
+            self.number = number
 
         # def on_batch_end(self, batch, logs=None):
         # pass
@@ -266,43 +266,43 @@ def train_models(models, train_data, test_data):
             self.write_results(
                 "IMERG/DEV/ALL_TEST_DATA.csv",
                 predictions,
-                epoch,
+                epoch + 1,
             )
             with open(f"OVERALL_RESULTS.csv", "a") as f:
-                f.write(f"{id},{epoch},{self.batch_size},{mae},{rmse}\n")
+                f.write(f"{self.number},{epoch + 1},{self.batch_size},{mae},{rmse}\n")
             tf.keras.models.save_model(
-                self.model, f"MODELS/MODEL{id}_EPOCHS{epoch}_BATCH{self.batch_size}"
+                self.model, f"MODELS/MODEL{self.number}_EPOCHS{epoch + 1}_BATCH{self.batch_size}"
             )
 
         def write_results(self, test_csv_path, predictions, epoch):
             os.chdir(Path(__file__).parent.parent)
             csv = pd.read_csv(test_csv_path)
             csv["preds"] = predictions
-            csv.to_csv(f"OUTPUT/MODEL{self.id}_RESULTS{epoch}_{self.batch_size}.csv")
+            csv.to_csv(f"OUTPUT/MODEL{self.number}_RESULTS{epoch}_{self.batch_size}.csv")
 
     os.makedirs("MODELS", exist_ok=True)
     os.makedirs("OUTPUT", exist_ok=True)
 
     batches = [1, 2, 4, 8, 16]
     for bsize in batches:
-        for id, model in enumerate(models):
+        for number, model in enumerate(models):
             model.compile(
                 optimizer="adam",
                 loss=tf.keras.losses.MeanAbsoluteError(),
                 metrics=["mae", "mse"],
             )
-            print(f"Training model {id + 1} with batch size {bsize}.")
+            print(f"Training model {number + 1} with batch size {bsize}.")
             model.fit(
                 [train_data[0], train_data[1]],
                 train_data[2],
                 epochs=50,
                 batch_size=bsize,
                 callbacks=[
-                    OutputPredictions(bsize, id + 1),
+                    OutputPredictions(bsize, number + 1),
                     keras.callbacks.EarlyStopping(monitor="loss", patience=10),
                 ],
             )
-            tf.keras.backend.clear_session(free_memory=True)
+            tf.keras.backend.clear_session()
 
 
 if __name__ == "__main__":
