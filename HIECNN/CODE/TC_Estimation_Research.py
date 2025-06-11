@@ -170,7 +170,7 @@ def define_models():
     # new_model3.summary()
 
     # 200km
-    vmax_input = keras.Input(shape=(2,), name="vmax_layer")
+    # vmax_input = keras.Input(shape=(2,), name="vmax_layer")
     img_input = keras.Input(shape=(41, 41, 1), name="img_layer")
 
     model_1 = keras.layers.Conv2D(64, 8)(img_input)
@@ -185,13 +185,11 @@ def define_models():
     model_1 = keras.layers.BatchNormalization()(model_1)
     img_output1 = keras.layers.Flatten()(model_1)
 
-    merged_model1 = keras.layers.concatenate([img_output1, vmax_input])
-    output_layer1 = keras.layers.Dense(256)(merged_model1)
+    # merged_model1 = keras.layers.concatenate([img_output1, vmax_input])
+    output_layer1 = keras.layers.Dense(256)(img_output1)
     output_layer1 = keras.layers.Dense(170)(output_layer1)
 
-    new_model1 = keras.Model(
-        inputs=[img_input, vmax_input], outputs=output_layer1, name="model_1"
-    )
+    new_model1 = keras.Model(inputs=img_input, outputs=output_layer1, name="model_1")
 
     # new_model1.summary()
 
@@ -211,12 +209,10 @@ def define_models():
     model_2 = keras.layers.MaxPool2D(2, 2)(model_2)
     img_output2 = keras.layers.Flatten()(model_2)
 
-    merged_model2 = keras.layers.concatenate([img_output2, vmax_input])
-    output_layer2 = keras.layers.Dense(170)(merged_model2)
+    # merged_model2 = keras.layers.concatenate([img_output2, vmax_input])
+    output_layer2 = keras.layers.Dense(170)(img_output2)
 
-    new_model2 = keras.Model(
-        inputs=[img_input, vmax_input], outputs=output_layer2, name="model_2"
-    )
+    new_model2 = keras.Model(inputs=img_input, outputs=output_layer2, name="model_2")
 
     # new_model2.summary()
 
@@ -235,12 +231,10 @@ def define_models():
     model_3 = keras.layers.MaxPool2D(2, 2)(model_3)
     img_output3 = keras.layers.Flatten()(model_3)
 
-    merged_model3 = keras.layers.concatenate([img_output3, vmax_input])
-    output_layer3 = keras.layers.Dense(170)(merged_model3)
+    # merged_model3 = keras.layers.concatenate([img_output3, vmax_input])
+    output_layer3 = keras.layers.Dense(170)(img_output3)
 
-    new_model3 = keras.Model(
-        inputs=[img_input, vmax_input], outputs=output_layer3, name="model_3"
-    )
+    new_model3 = keras.Model(inputs=img_input, outputs=output_layer3, name="model_3")
 
     # new_model3.summary()
 
@@ -259,9 +253,9 @@ def train_models(models, train_data, test_data):
         # pass
 
         def on_epoch_end(self, epoch, logs=None):
-            results = self.model.evaluate([test_data[0], test_data[1]], test_data[2])
+            results = self.model.evaluate(test_data[0], test_data[2])
             mae, rmse = results[0], results[2] ** 0.5
-            predictions = model.predict([test_data[0], test_data[1]])
+            predictions = model.predict(test_data[0])
             predictions = np.average(predictions, axis=1)
             self.write_results(
                 "IMERG/DEV/ALL_TEST_DATA.csv",
@@ -296,7 +290,7 @@ def train_models(models, train_data, test_data):
             )
             print(f"Training model {number + 1} with batch size {bsize}.")
             model.fit(
-                [train_data[0], train_data[1]],
+                train_data[0],
                 train_data[2],
                 epochs=50,
                 batch_size=bsize,
