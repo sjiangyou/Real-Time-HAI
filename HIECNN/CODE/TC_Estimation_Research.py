@@ -255,7 +255,7 @@ def train_models(models, train_data, test_data):
         def on_epoch_end(self, epoch, logs=None):
             results = self.model.evaluate(test_data[0], test_data[2])
             mae, rmse = results[0], results[2] ** 0.5
-            predictions = model.predict([test_data[0], test_data[1]])
+            predictions = model.predict(test_data[0])
             predictions = np.average(predictions, axis=1)
             self.write_results(
                 "IMERG/DEV/ALL_TEST_DATA.csv",
