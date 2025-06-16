@@ -186,6 +186,7 @@ def define_models():
     img_output1 = keras.layers.Flatten()(model_1)
 
     # merged_model1 = keras.layers.concatenate([img_output1, vmax_input])
+    # output_layer1 = keras.layers.Dense(256)(merged_model1)
     output_layer1 = keras.layers.Dense(256)(img_output1)
     output_layer1 = keras.layers.Dense(170)(output_layer1)
 
@@ -210,6 +211,7 @@ def define_models():
     img_output2 = keras.layers.Flatten()(model_2)
 
     # merged_model2 = keras.layers.concatenate([img_output2, vmax_input])
+    # output_layer2 = keras.layers.Dense(170)(merged_model2)
     output_layer2 = keras.layers.Dense(170)(img_output2)
 
     new_model2 = keras.Model(inputs=img_input, outputs=output_layer2, name="model_2")
@@ -232,14 +234,37 @@ def define_models():
     img_output3 = keras.layers.Flatten()(model_3)
 
     # merged_model3 = keras.layers.concatenate([img_output3, vmax_input])
+    # output_layer3 = keras.layers.Dense(170)(merged_model3)
     output_layer3 = keras.layers.Dense(170)(img_output3)
 
     new_model3 = keras.Model(inputs=img_input, outputs=output_layer3, name="model_3")
 
     # new_model3.summary()
 
+    model_4 = keras.layers.Conv2D(16, 1)(img_input)
+    model_4 = keras.activations.relu(model_4)
+    model_4 = keras.layers.BatchNormalization()(model_4)
+    model_4 = keras.layers.MaxPool2D(2, 2)(model_4)
+    model_4 = keras.layers.Conv2D(32, 1)(model_4)
+    model_4 = keras.activations.relu(model_4)
+    model_4 = keras.layers.BatchNormalization()(model_4)
+    model_4 = keras.layers.MaxPool2D(2, 2)(model_4)
+    model_4 = keras.layers.Conv2D(64, 1)(model_4)
+    model_4 = keras.activations.relu(model_4)
+    model_4 = keras.layers.BatchNormalization()(model_4)
+    model_4 = keras.layers.MaxPool2D(2, 2)(model_4)
+    model_4 = keras.layers.Conv2D(128, 1)(model_4)
+    img_output4 = keras.layers.Flatten()(model_4)
+
+    # merged_model4 = keras.layers.concatenate([img_output4, vmax_input])
+    # output_layer4 = keras.layers.Dense(256)(merged_model4)
+    output_layer4 = keras.layers.Dense(256)(img_output4)
+    output_layer4 = keras.layers.Dense(170)(img_output4)
+
+    new_model4 = keras.Model(inputs=img_input, outputs=output_layer4, name="model_4")
+
     print("Models defined.")
-    return [new_model1, new_model2, new_model3]
+    return [new_model1, new_model2, new_model3, new_model4]
 
 
 def train_models(models, train_data, test_data):
@@ -253,9 +278,9 @@ def train_models(models, train_data, test_data):
         # pass
 
         def on_epoch_end(self, epoch, logs=None):
-            results = self.model.evaluate(test_data[0], test_data[2])
+            results = self.model.evaluate([test_data[0], test_data[1]], test_data[2])
             mae, rmse = results[0], results[2] ** 0.5
-            predictions = model.predict(test_data[0])
+            predictions = model.predict([test_data[0], test_data[1]])
             predictions = np.average(predictions, axis=1)
             self.write_results(
                 "IMERG/DEV/ALL_TEST_DATA.csv",
