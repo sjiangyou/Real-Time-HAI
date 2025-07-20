@@ -3,8 +3,6 @@ library(here)
 setwd(here("HIECNN"))
 options(scipen = 999)
 
-# Model 1
-
 analyze <- read.csv("OUTPUT_VMAX_IMERG/")
 analyze$category <- ifelse(analyze$VMAX >= 96, "Maj",
                         ifelse(analyze$VMAX >= 64, "Min",
