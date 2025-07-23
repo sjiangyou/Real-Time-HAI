@@ -9,9 +9,10 @@ from tensorflow import keras
 def main():
     os.chdir(Path(__file__).parent.parent)
     train_data = process_train_data()
+    validation_data = process_validation_data()
     test_data = process_test_data()
     models = define_models()
-    train_models(models, train_data, test_data)
+    train_models(models, train_data, validation_data, test_data)
 
 
 def process_train_data():
@@ -51,6 +52,44 @@ def process_train_data():
     train_label = np.array(train_label)
 
     return train_img, train_vmax, train_label
+
+
+def process_validation_data():
+    print("Processing validation data...")
+
+    validation = pd.read_csv("IMERG/DEV/ALL_VALIDATION_DATA.csv")
+    validation = validation[["GIS_ID", "VMAX", "VMAX_N06", "VMAX_N12"]]
+    validation_img = []
+    validation_vmax = []
+    validation_label = []
+    for f in range(len(validation.GIS_ID)):
+        filename = f"IMERG_CSV/{validation.GIS_ID[f]}.csv"
+        try:
+            image = pd.read_csv(filename, header=None)
+            if image.shape != (121, 121):
+                continue
+            image = image.iloc[40:81, 40:81]
+            image = np.array(image)
+            validation_img.append(image)
+            lab = validation.VMAX[f]
+            validation_label.append(lab)
+            pvmax = np.array([validation.VMAX_N06[f], validation.VMAX_N12[f]])
+            validation_vmax.append(pvmax)
+        except Exception as e:
+            print(f"Error processing {filename}: {e}")
+    print("Validation data processed.")
+    print(
+        f"There are {len(validation_img)} images, {len(validation_vmax)} intensity values, and {len(validation_label)} labels."
+    )
+
+    validation_img = np.array(validation_img)
+    validation_img = validation_img.reshape(-1, 41, 41, 1)
+    validation_img = validation_img.astype("float64")
+    validation_vmax = np.array(validation_vmax)
+    validation_vmax = validation_vmax.reshape(-1, 2)
+    validation_label = np.array(validation_label)
+
+    return validation_img, validation_vmax, validation_label
 
 
 def process_test_data():
@@ -93,82 +132,6 @@ def process_test_data():
 
 
 def define_models():
-
-    # 300km
-    # vmax_input = keras.Input(shape=(2,), name="vmax_layer")
-    # img_input = keras.Input(shape=(61, 61, 1), name="img_layer")
-    #
-    # model_1 = keras.layers.Conv2D(64, 12)(img_input)
-    # model_1 = keras.layers.Conv2D(64, 12)(model_1)
-    # model_1 = keras.layers.Conv2D(64, 2)(model_1)
-    # model_1 = keras.layers.BatchNormalization()(model_1)
-    # model_1 = keras.activations.linear(model_1)
-    # model_1 = keras.layers.MaxPool2D(2, 2)(model_1)
-    # model_1 = keras.layers.Conv2D(64, 9)(model_1)
-    # model_1 = keras.layers.Conv2D(64, 9)(model_1)
-    # model_1 = keras.layers.Conv2D(256, 2)(model_1)
-    # model_1 = keras.layers.BatchNormalization()(model_1)
-    # img_output1 = keras.layers.Flatten()(model_1)
-    #
-    # merged_model1 = keras.layers.concatenate([img_output1, vmax_input])
-    # output_layer1 = keras.layers.Dense(256)(merged_model1)
-    # output_layer1 = keras.layers.Dense(170, activation="linear")(output_layer1)
-    #
-    # new_model1 = keras.Model(
-    #     inputs=[img_input, vmax_input], outputs=output_layer1, name="model_1"
-    # )
-    #
-    # new_model1.summary()
-    #
-    # model_2 = keras.layers.Conv2D(256, 12)(img_input)
-    # model_2 = keras.layers.BatchNormalization()(model_2)
-    # model_2 = keras.activations.linear(model_2)
-    # model_2 = keras.layers.MaxPool2D(2, 2)(model_2)
-    # model_2 = keras.layers.Conv2D(128, 2, activation="linear")(model_2)
-    # model_2 = keras.layers.Conv2D(128, 7)(model_2)
-    # model_2 = keras.layers.BatchNormalization()(model_2)
-    # model_2 = keras.activations.linear(model_2)
-    # model_2 = keras.layers.MaxPool2D(2, 2)(model_2)
-    # model_2 = keras.layers.Conv2D(64, 2, activation="linear")(model_2)
-    # model_2 = keras.layers.Conv2D(64, 4)(model_2)
-    # model_2 = keras.layers.BatchNormalization()(model_2)
-    # model_2 = keras.activations.linear(model_2)
-    # model_2 = keras.layers.MaxPool2D(2, 2)(model_2)
-    # img_output2 = keras.layers.Flatten()(model_2)
-    #
-    # merged_model2 = keras.layers.concatenate([img_output2, vmax_input])
-    # output_layer2 = keras.layers.Dense(170, activation="linear")(merged_model2)
-    #
-    # new_model2 = keras.Model(
-    #     inputs=[img_input, vmax_input], outputs=output_layer2, name="model_2"
-    # )
-    #
-    # new_model2.summary()
-    #
-    # model_3 = keras.layers.Conv2D(256, (10, 4))(img_input)
-    # model_3 = keras.layers.Conv2D(256, (4, 10))(model_3)
-    # model_3 = keras.layers.BatchNormalization()(model_3)
-    # model_3 = keras.activations.linear(model_3)
-    # model_3 = keras.layers.MaxPool2D(2, 2)(model_3)
-    # model_3 = keras.layers.Conv2D(128, 6)(model_3)
-    # model_3 = keras.layers.BatchNormalization()(model_3)
-    # model_3 = keras.activations.linear(model_3)
-    # model_3 = keras.layers.MaxPool2D(2, 2)(model_3)
-    # model_3 = keras.layers.Conv2D(64, 4)(model_3)
-    # model_3 = keras.layers.BatchNormalization()(model_3)
-    # model_3 = keras.activations.linear(model_3)
-    # model_3 = keras.layers.MaxPool2D(2, 2)(model_3)
-    # img_output3 = keras.layers.Flatten()(model_3)
-    #
-    # merged_model3 = keras.layers.concatenate([img_output3, vmax_input])
-    # output_layer3 = keras.layers.Dense(170, activation="linear")(merged_model3)
-    #
-    # new_model3 = keras.Model(
-    #     inputs=[img_input, vmax_input], outputs=output_layer3, name="model_3"
-    # )
-    #
-    # new_model3.summary()
-
     # 200km
     # vmax_input = keras.Input(shape=(2,), name="vmax_layer")
     img_input = keras.Input(shape=(41, 41, 1), name="img_layer")
@@ -281,7 +244,7 @@ def define_models():
     return [new_model1, new_model2, new_model3, new_model4]
 
 
-def train_models(models, train_data, test_data):
+def train_models(models, train_data, validation_data, test_data):
     class OutputPredictions(keras.callbacks.Callback):
         def __init__(self, batch_size, number):
             super().__init__()
@@ -292,7 +255,7 @@ def train_models(models, train_data, test_data):
         # pass
 
         def on_epoch_end(self, epoch, logs=None):
-            results = self.model.evaluate(test_data[0], test_data[2])
+            results = self.model.evaluate(validation_data[0], validation_data[2])
             mae, rmse = results[0], results[2] ** 0.5
             predictions = model.predict(test_data[0])
             predictions = np.average(predictions, axis=1)
