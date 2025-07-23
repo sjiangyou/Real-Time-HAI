@@ -12,7 +12,7 @@ def main():
     validation_data = process_validation_data()
     test_data = process_test_data()
     models = define_models()
-    train_models(models, train_data, test_data)
+    train_models(models, train_data, validation_data, test_data)
 
 
 def process_train_data():
