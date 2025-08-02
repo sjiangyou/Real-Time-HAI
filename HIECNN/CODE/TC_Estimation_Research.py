@@ -24,8 +24,8 @@ def process_train_data():
     train_img = []
     train_vmax = []
     train_label = []
-    for f in range(len(train.GIS_ID)):
-        filename = f"IMERG_CSV/{train.GIS_ID[f]}.csv"
+    for i, file in enumerate(train.GIS_ID):
+        filename = f"IMERG_CSV/{file}.csv"
         try:
             image = pd.read_csv(filename, header=None)
             if image.shape != (121, 121):
@@ -33,16 +33,13 @@ def process_train_data():
             image = image.iloc[40:81, 40:81]
             image = np.array(image)
             train_img.append(image)
-            lab = train.VMAX[f]
+            lab = train.VMAX[i]
             train_label.append(lab)
-            pvmax = np.array([train.VMAX_N06[f], train.VMAX_N12[f]])
+            pvmax = np.array([train.VMAX_N06[i], train.VMAX_N12[i]])
             train_vmax.append(pvmax)
         except Exception as e:
             print(f"Error processing {filename}: {e}")
-    print("Training data processed.")
-    print(
-        f"There are {len(train_img)} images, {len(train_vmax)} intensity values, and {len(train_label)} labels."
-    )
+    print(f"Training data processed with {len(train_img)} images")
 
     train_img = np.array(train_img)
     train_img = train_img.reshape(-1, 41, 41, 1)
