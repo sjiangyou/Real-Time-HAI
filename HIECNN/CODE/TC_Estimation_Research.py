@@ -133,15 +133,12 @@ def define_models():
     # vmax_input = keras.Input(shape=(2,), name="vmax_layer")
     img_input = keras.Input(shape=(41, 41, 1), name="img_layer")
 
-    model_1 = keras.layers.Conv2D(32, 7, padding="same")(img_input)
-    model_1 = keras.layers.Conv2D(32, 5, padding="same", strides=2)(model_1)
+    model_1 = keras.layers.Conv2D(32, 5, padding="same", strides=2)(img_input)
     model_1 = keras.layers.BatchNormalization()(model_1)
     model_1 = keras.activations.relu(model_1)
-    model_1 = keras.layers.Conv2D(64, 7, padding="same")(model_1)
     model_1 = keras.layers.Conv2D(64, 5, padding="same", strides=2)(model_1)
     model_1 = keras.layers.BatchNormalization()(model_1)
     model_1 = keras.activations.relu(model_1)
-    model_1 = keras.layers.Conv2D(128, 7, padding="same")(model_1)
     model_1 = keras.layers.Conv2D(128, 5, padding="same", strides=2)(model_1)
     model_1 = keras.layers.BatchNormalization()(model_1)
     model_1 = keras.activations.relu(model_1)
@@ -156,15 +153,11 @@ def define_models():
 
     # new_model1.summary()
 
-    model_2 = keras.layers.Conv2D(32, 3, padding="same")(img_input)
-    model_2 = keras.layers.Conv2D(32, 3, padding="same", strides=2)(model_2)
+    model_2 = keras.layers.Conv2D(32, 3, padding="same", strides=2)(img_input)
     model_2 = keras.layers.BatchNormalization()(model_2)
     model_2 = keras.activations.relu(model_2)
-    model_2 = keras.layers.Conv2D(64, 3, padding="same")(model_2)
     model_2 = keras.layers.Conv2D(64, 3, padding="same", strides=2)(model_2)
     model_2 = keras.layers.BatchNormalization()(model_2)
-    model_2 = keras.activations.relu(model_2)
-    model_2 = keras.layers.Conv2D(128, 3, padding="same")(model_2)
     model_2 = keras.layers.Conv2D(128, 3, padding="same", strides=2)(model_2)
     model_2 = keras.layers.BatchNormalization()(model_2)
     model_2 = keras.activations.relu(model_2)
@@ -184,8 +177,6 @@ def define_models():
     model_3 = keras.layers.Conv2D(32, 3, padding="same", strides=2)(model_3)
     model_3 = keras.layers.BatchNormalization()(model_3)
     model_3 = keras.activations.relu(model_3)
-    model_3 = keras.layers.Conv2D(64, (3, 5), padding="same")(model_3)
-    model_3 = keras.layers.Conv2D(64, (5, 3), padding="same")(model_3)
     model_3 = keras.layers.Conv2D(64, 3, padding="same", strides=2)(model_3)
     model_3 = keras.layers.BatchNormalization()(model_3)
     model_3 = keras.activations.relu(model_3)
@@ -204,18 +195,17 @@ def define_models():
     # new_model3.summary()
 
     model_4 = keras.layers.Conv2D(16, 4, padding="same", strides=2)(img_input)
-    model_4 = keras.activations.relu(model_4)
     model_4 = keras.layers.BatchNormalization()(model_4)
+    model_4 = keras.activations.relu(model_4)
     model_4 = keras.layers.Conv2D(32, 4, padding="same", strides=2)(model_4)
-    model_4 = keras.activations.relu(model_4)
     model_4 = keras.layers.BatchNormalization()(model_4)
+    model_4 = keras.activations.relu(model_4)
     model_4 = keras.layers.Conv2D(64, 4, padding="same", strides=2)(model_4)
-    model_4 = keras.activations.relu(model_4)
     model_4 = keras.layers.BatchNormalization()(model_4)
+    model_4 = keras.activations.relu(model_4)
     model_4 = keras.layers.Conv2D(128, 4, padding="same", strides=2)(model_4)
-    model_4 = keras.activations.relu(model_4)
     model_4 = keras.layers.BatchNormalization()(model_4)
-    model_4 = keras.layers.Conv2D(256, 4, padding="same", strides=2)(model_4)
+    model_4 = keras.activations.relu(model_4)
     img_output4 = keras.layers.Flatten()(model_4)
 
     # merged_model4 = keras.layers.concatenate([img_output4, vmax_input])
@@ -249,7 +239,7 @@ def train_models(models, train_data, validation_data, test_data):
                 predictions,
                 epoch + 1,
             )
-            with open(f"OVERALL_RESULTS.csv", "a") as f:
+            with open("OVERALL_RESULTS.csv", "a", encoding="utf-8") as f:
                 f.write(f"{self.number},{epoch + 1},{self.batch_size},{mae},{rmse}\n")
             tf.keras.models.save_model(
                 self.model,
