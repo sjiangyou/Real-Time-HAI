@@ -1,6 +1,6 @@
 # The best use of this script is after running the Add_Future_Land_Ocean.ipynb script.
 
-setwd("~/Documents/Real_Time_HAI/HPCNN/IMERG/")
+setwd("~/Projects/Real-Time-HAI/HIPCNN/IMERG/")
 options(scipen = 999)
 
 data <- read.csv("Land_Ocean_Futures.csv", header = TRUE)

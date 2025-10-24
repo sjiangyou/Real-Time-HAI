@@ -2,7 +2,7 @@
 # coding: utf-8
 
 # # Created by Sunny You on September 1, 2023
-# 
+#
 # This script adds in the future of each storm's time of landfall to the model's training data.
 
 # In[1]:
@@ -11,22 +11,21 @@
 import numpy as np
 import pandas as pd
 import os
-import re
+from pathlib import Path
 
 
 # In[2]:
 
-
-os.chdir(os.path.dirname(os.path.dirname(os.getcwd())))
+os.chdir(Path(__file__).parent.parent.parent)
 print(os.getcwd())
 
 
 # In[3]:
 
 
-data = pd.read_csv('BRTK_SHIPS_2000to2019_IMERG_OK_Request_2023_FINAL.csv')
-data['ID'] = data.GIS_ID.str[:10]
-data = data[["GIS_ID", "JULDAY","LAND_OCEAN","ID"]]
+data = pd.read_csv("BRTK_SHIPS_2000to2019_IMERG_OK_Request_2023_FINAL.csv")
+data["ID"] = data.GIS_ID.str[:10]
+data = data[["GIS_ID", "JULDAY", "LAND_OCEAN", "ID"]]
 data
 
 
@@ -40,11 +39,11 @@ s
 # In[5]:
 
 
-final_df = pd.DataFrame(columns = ["GIS_ID", "LOP06", "LOP12", "LOP18", "LOP24"])
+final_df = pd.DataFrame(columns=["GIS_ID", "LOP06", "LOP12", "LOP18", "LOP24"])
 
-i=0
+i = 0
 for i in range(data.shape[0]):
-    if i%1000 == 0:
+    if i % 1000 == 0:
         print(i)
     row = data.loc[i]
     cur_time = row.JULDAY
@@ -61,22 +60,22 @@ for i in range(data.shape[0]):
 
     if p6.shape[0] == 0:
         p6 = "-999"
-    else: 
+    else:
         p6 = p6.LAND_OCEAN.iloc[0]
 
     if p12.shape[0] == 0:
         p12 = "-999"
-    else: 
+    else:
         p12 = p12.LAND_OCEAN.iloc[0]
 
     if p18.shape[0] == 0:
         p18 = "-999"
-    else: 
+    else:
         p18 = p18.LAND_OCEAN.iloc[0]
 
     if p24.shape[0] == 0:
         p24 = "-999"
-    else: 
+    else:
         p24 = p24.LAND_OCEAN.iloc[0]
 
     final_df.loc[i] = [row.GIS_ID, p6, p12, p18, p24]
@@ -102,19 +101,18 @@ f
 # In[9]:
 
 
-original_data = pd.read_csv('BRTK_SHIPS_2000to2019_IMERG_OK_Request_2023_FINAL.csv')
+original_data = pd.read_csv("BRTK_SHIPS_2000to2019_IMERG_OK_Request_2023_FINAL.csv")
 original_data
 
 
 # In[10]:
 
 
-original_data = original_data.merge(f, on = "GIS_ID")
+original_data = original_data.merge(f, on="GIS_ID")
 original_data
 
 
 # In[11]:
 
 
-original_data.to_csv("HPCNN/IMERG/Land_Ocean_Futures.csv")
-
+original_data.to_csv("HIPCNN/IMERG/Land_Ocean_Futures.csv")
