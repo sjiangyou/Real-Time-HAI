@@ -1,6 +1,7 @@
 # Author: Sunny You
-# References: https://doi.org/10.1175/WAF-D-24-0196.1
-# Last Revised: 2025-10-24
+References: You, S., P. Zhu, et al. 2025: Predicting Tropical Cyclone Intensity Using a Convolutional Neural Network and 20 Years of IMERG Satellite Rainfall Data, Weather and Forecasting, 40, 2317–2331. 
+# DOI: https://doi.org/10.1175/WAF-D-24-0196.1
+# Last Revised: 2025-10-31
 
 This repository contains my code for my HIECNN, HIPCNN, and HRICNN models.
 All 3 models are part of the Real Time HAI product (in development currently).
