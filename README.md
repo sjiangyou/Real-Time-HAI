@@ -22,3 +22,9 @@ The models utilize NASA IMERG satellite images as inputs. Below are examples of 
 # Model Architecture and Framework
 Below is a diagram illustrating the architecture of the CNN models used in this project.
 ![Model Architecture](resources/Architecture.jpg)
+
+# Technologies Used
+- Python (TensorFlow, Keras, NumPy, Pandas)
+- Jupyter Notebooks (for experimentation and prototyping)
+- R (for data analysis and visualization)
+- HTML/CSS/JS (for future web interface development)
