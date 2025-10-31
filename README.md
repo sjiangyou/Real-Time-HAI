@@ -28,3 +28,9 @@ Below is a diagram illustrating the architecture of the CNN models used in this 
 - Jupyter Notebooks (for experimentation and prototyping)
 - R (for data analysis and visualization)
 - HTML/CSS/JS (for future web interface development)
+
+# Demo Videos
+- Web Demo for future HAI product: [YouTube Link](https://youtu.be/XXm4rNwczMw)
+- HIECNN Model Explanation: [YouTube Link](https://youtu.be/Ioq_OeiLRXs)
+- HIPCNN Model Explanation (previously known as HCNN): [YouTube Link](https://youtu.be/_1DFHKlfxO8)
+- HRICNN Model Explanation: [YouTube Link](https://youtu.be/WxH0oknacfo)
