@@ -16,7 +16,7 @@ All the models accept satellite images and environmental data as inputs to produ
 
 # Example Input Images
 The models utilize NASA IMERG satellite images as inputs. Below are examples of the input images used.
-![Input Images](resources/Image_Inputs.jpg)
+![Input Images](resources/Image_Input.jpg)
 
 # Model Architecture and Framework
 Below is a diagram illustrating the architecture of the CNN models used in this project.
