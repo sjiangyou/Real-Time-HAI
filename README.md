@@ -1,5 +1,5 @@
 # Author: Sunny You
-References: You, S., P. Zhu, et al. 2025: Predicting Tropical Cyclone Intensity Using a Convolutional Neural Network and 20 Years of IMERG Satellite Rainfall Data, Weather and Forecasting, 40, 2317–2331. 
+Peer-Reviewed Publication: You, S., P. Zhu, et al. 2025: Predicting Tropical Cyclone Intensity Using a Convolutional Neural Network and 20 Years of IMERG Satellite Rainfall Data, Weather and Forecasting, 40, 2317–2331. 
 # DOI: https://doi.org/10.1175/WAF-D-24-0196.1
 # Last Revised: 2025-10-31
 
