@@ -1,28 +1,19 @@
+from pathlib import Path
 import h5py
 import os
 import numpy as np
 import pandas as pd
-import pathlib
-from SHIPS_Data_Collection import ships_extraction
-<<<<<<< Updated upstream
+
+# from SHIPS_Data_Collection import ships_extraction
 
 os.chdir("Data/H5")
-=======
->>>>>>> Stashed changes
 
 
 def main():
-<<<<<<< Updated upstream
-    for file in list(pathlib.Path(".").glob("*.RT-H5")):
+    for file in list(Path(".").glob("*.RT-H5")):
         h5_convert_csv(file)
 
 
-=======
-    for file in list(pathlib.Path('.').glob('*.RT-H5')):
-        h5_convert_csv(file)
-        
-
->>>>>>> Stashed changes
 def h5_convert_csv(filename):
     date, time = filename[23:31], filename[33:35]
     year = date[0:4]
