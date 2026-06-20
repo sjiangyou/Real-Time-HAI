@@ -1,5 +1,6 @@
 *.txt
-!requirements.txt
+!requirements_Linux.txt
+!requirements_MacOS.txt
 *.csv
 *.docx
 *.zip
@@ -15,9 +16,11 @@
 **/IMERG
 **/IMERG_CSV
 pyvenv.cfg
+.python-version
 **/bin
 **/include
 **/lib
+**/lib64
 **/share
 **/etc
 test.py

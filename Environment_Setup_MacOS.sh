@@ -1,6 +1,6 @@
 #!/bin/bash
 
-python3.11 -m venv .
+python -m venv .venv
 source bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements_MacOS.txt

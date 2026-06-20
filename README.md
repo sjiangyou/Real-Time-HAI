@@ -34,3 +34,7 @@ Below is a diagram illustrating the architecture of the CNN models used in this 
 - HIECNN Model Explanation: [YouTube Link](https://youtu.be/Ioq_OeiLRXs)
 - HIPCNN Model Explanation (previously known as HCNN): [YouTube Link](https://youtu.be/_1DFHKlfxO8)
 - HRICNN Model Explanation: [YouTube Link](https://youtu.be/WxH0oknacfo)
+
+# Dependencies
+- Python 3.9-3.12
+- TensorFlow
