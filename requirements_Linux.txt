@@ -3,3 +3,4 @@ numpy
 pandas
 shap
 tensorflow[and-cuda]
+scikit-learn
