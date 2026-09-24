@@ -2,5 +2,5 @@ h5py
 numpy
 pandas
 shap
-tensorflow[and-cuda]
+torch
 scikit-learn
