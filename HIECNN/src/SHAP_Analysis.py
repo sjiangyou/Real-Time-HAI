@@ -2,9 +2,10 @@ import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from tensorflow import keras
 import shap
+import torch
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def main():
@@ -115,36 +116,21 @@ def process_test_data():
     return shap_test_img, shap_test_ships, shap_test_label
 
 
-new_model1.compile(
-    optimizer="adam", loss=tf.keras.losses.MeanAbsoluteError(), metrics=["mae", "mse"]
-)
-new_model2.compile(
-    optimizer="adam", loss=tf.keras.losses.MeanAbsoluteError(), metrics=["mae", "mse"]
-)
-new_model3.compile(
-    optimizer="adam", loss=tf.keras.losses.MeanAbsoluteError(), metrics=["mae", "mse"]
-)
-
-new_model2.fit(
-    [X_train_img, X_train_vmax], y_train, epochs=1, batch_size=4, validation_split=0.1
-)
-res = new_model2.evaluate([X_test_img, X_test_vmax], y_test)
-print("MAE = " + str(res[0]))
-print("RMSE = " + str((res[2]) ** 0.5))
-preds = new_model2.predict([X_test_img, X_test_vmax])
-a = np.average(preds, axis=1)
-test["preds"] = a
-
-
-def compute_shap_values():
-    shap.explainers._deep.deep_tf.op_handlers["AddV2"] = (
-        shap.explainers._deep.deep_tf.passthrough
+def compute_shap_values(model, background, test_inputs):
+    """Calculate HIECNN image SHAP values with SHAP's PyTorch backend."""
+    model = model.to(DEVICE).eval()
+    background = (
+        torch.from_numpy(background).to(DEVICE)
+        if isinstance(background, np.ndarray)
+        else background.to(DEVICE)
     )
-    shap.explainers._deep.deep_tf.op_handlers["FusedBatchNormV3"] = (
-        shap.explainers._deep.deep_tf.linearity_1d(0)
+    test_inputs = (
+        torch.from_numpy(test_inputs).to(DEVICE)
+        if isinstance(test_inputs, np.ndarray)
+        else test_inputs.to(DEVICE)
     )
-    e = shap.DeepExplainer(new_model2, [shap_train_img, shap_train_ships])
-    shap_values = e.shap_values([shap_test_img, shap_test_ships])
+    explainer = shap.DeepExplainer(model, background)
+    return explainer.shap_values(test_inputs, check_additivity=False)
 
 
 if __name__ == "__main__":

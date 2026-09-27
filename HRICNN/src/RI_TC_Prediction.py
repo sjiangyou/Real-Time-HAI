@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -24,6 +23,7 @@ VALIDATION_SPLIT = 0.1
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     gpu_test()
@@ -41,6 +41,7 @@ def main():
 # GPU
 # ---------------------------------------------------------------------------
 
+
 def gpu_test():
     gpu_available = torch.cuda.is_available()
     print(f"Is GPU available?: {gpu_available}")
@@ -54,6 +55,7 @@ def gpu_test():
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+
 
 def load_data():
     train = pd.read_csv("IMERG/Model_Data/ATL_train.csv")
@@ -252,6 +254,7 @@ def load_data():
 # Models
 # ---------------------------------------------------------------------------
 
+
 class Model1(nn.Module):
     """
     Keras model_1 converted to PyTorch.
@@ -386,6 +389,7 @@ def model_setup(
 # Metrics
 # ---------------------------------------------------------------------------
 
+
 def binary_accuracy(preds, targets):
     predictions = (preds >= 0.5).float()
     return (predictions == targets).float().mean().item()
@@ -433,6 +437,7 @@ def evaluate_model(model, data_loader, criterion):
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
+
 
 def train_model(model, X_train_img, X_train_ships, y_train):
     dataset = TensorDataset(
@@ -521,6 +526,7 @@ def train_model(model, X_train_img, X_train_ships, y_train):
 # Model evaluation
 # ---------------------------------------------------------------------------
 
+
 def run_models(
     new_model1,
     new_model2,
@@ -577,6 +583,7 @@ def run_models(
 # SHAP analysis
 # ---------------------------------------------------------------------------
 
+
 def shap_analysis(new_model1, X_test_img, X_test_ships):
     train_no_resample = pd.read_csv("IMERG/Model_Data/ATL_train.csv")
 
@@ -626,12 +633,8 @@ def shap_analysis(new_model1, X_test_img, X_test_ships):
 
     print(train_no_resample["RI"].value_counts()[0])
 
-    train_no_resample_false = train_no_resample[
-        train_no_resample["RI"] == 0
-    ]
-    train_no_resample_true = train_no_resample[
-        train_no_resample["RI"] == 1
-    ]
+    train_no_resample_false = train_no_resample[train_no_resample["RI"] == 0]
+    train_no_resample_true = train_no_resample[train_no_resample["RI"] == 1]
 
     train_no_resample_false = train_no_resample_false.sample(
         100,
@@ -654,11 +657,7 @@ def shap_analysis(new_model1, X_test_img, X_test_ships):
     shap_train_label = []
 
     for f in range(len(shap_train.GIS_ID)):
-        filename = (
-            "IMERG_Data_Old/IMERG_CSV/"
-            + shap_train.GIS_ID.iloc[f]
-            + ".csv"
-        )
+        filename = "IMERG_CSV/" + shap_train.GIS_ID.iloc[f] + ".csv"
 
         try:
             temp = pd.read_csv(filename, header=None)
@@ -714,14 +713,9 @@ def shap_analysis(new_model1, X_test_img, X_test_ships):
     test_img = torch.from_numpy(X_test_img).to(DEVICE)
     test_ships = torch.from_numpy(X_test_ships).to(DEVICE)
 
-    explainer = shap.DeepExplainer(
-        new_model1,
-        [background_img, background_ships],
-    )
+    explainer = shap.DeepExplainer(new_model1, [background_img, background_ships])
 
-    shap_values = explainer.shap_values(
-        [test_img, test_ships]
-    )
+    shap_values = explainer.shap_values([test_img, test_ships], check_additivity=False)
 
     # SHAP has returned different container shapes across versions.
     # Normalize the result enough to handle the common PyTorch formats.
@@ -747,15 +741,9 @@ def shap_analysis(new_model1, X_test_img, X_test_ships):
     if shap_ship_values.ndim == 3 and shap_ship_values.shape[-1] == 1:
         shap_ship_values = shap_ship_values[..., 0]
 
-    shap_image = [
-        np.sum(sample)
-        for sample in shap_img_values
-    ]
+    shap_image = [np.sum(sample) for sample in shap_img_values]
 
-    shap_ships = [
-        np.sum(sample)
-        for sample in shap_ship_values
-    ]
+    shap_ships = [np.sum(sample) for sample in shap_ship_values]
 
     # The original code attempted to extract these ten variables.
     # Here they are indexed by feature instead of using a stride of four.

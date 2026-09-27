@@ -1,26 +1,80 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[8]:
-
-
 # Author: Sunny You
+import os
 import pandas as pd
 import numpy as np
-import os
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow import keras
 import shap
+import torch
+from torch import nn
 
-# In[9]:
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def define_models():
+    model_1 = (
+        nn.Sequential(
+            nn.Conv2d(1, 64, 8),
+            nn.Conv2d(64, 64, 8),
+            nn.Conv2d(64, 64, 1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(64, 64, 3),
+            nn.Conv2d(64, 64, 3),
+            nn.Conv2d(64, 256, 1),
+            nn.BatchNorm2d(256),
+        ),
+        nn.Sequential(nn.Linear(256 * 9 * 9 + 4, 256), nn.Linear(256, 165)),
+    )
+    model_2 = (
+        nn.Sequential(
+            nn.Conv2d(1, 256, 8),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(256, 128, 1),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, 5),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(128, 64, 1),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, 3),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+        ),
+        nn.Linear(64 * 2 * 2 + 4, 165),
+    )
+    model_3 = (
+        nn.Sequential(
+            nn.Conv2d(1, 256, (6, 2)),
+            nn.Conv2d(256, 256, (2, 6)),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(256, 128, 4),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(128, 64, 3),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+        ),
+        nn.Linear(64 * 2 * 2 + 4, 165),
+    )
+    model_4 = (
+        nn.Sequential(nn.Conv2d(1, 256, 7), nn.MaxPool2d(2, 2)),
+        nn.Linear(256 * 17 * 17 + 4, 165),
+    )
+    return [
+        (image.to(DEVICE), output.to(DEVICE))
+        for image, output in [model_1, model_2, model_3, model_4]
+    ]
 
 
 os.chdir("/Users/sunnyyou/Documents/Real_Time_HAI/HIPCNN/IMERG")
-
-
-# In[181]:
-
 
 train = pd.read_csv("DEV/P06_2018_train_resample.csv")
 train = train[
@@ -28,11 +82,6 @@ train = train[
 ]
 # train = train.drop(["VMAX_FT"], axis = 1)
 train.columns = ["GIS_ID", "DATE", "PER", "POT", "VMAX", "SHDC_FT", "IC", "Category"]
-train
-
-
-# In[182]:
-
 
 test = pd.read_csv("DEV/P06_2018_test.csv")
 test = test[
@@ -40,7 +89,6 @@ test = test[
 ]
 # test = test.drop(["VMAX_FT"], axis = 1)
 test.columns = ["GIS_ID", "DATE", "PER", "POT", "VMAX", "SHDC_FT", "IC", "Category"]
-test
 
 
 # In[183]:
@@ -160,209 +208,60 @@ print(X_train_ships.shape)
 # In[136]:
 
 
-ships_input = keras.Input(shape=(4,), name="ships_layer")
-img_input = keras.Input(shape=(41, 41, 1), name="img_layer")
-
-w = keras.layers.Conv2D(64, 8)(img_input)
-w = keras.layers.Conv2D(64, 8)(w)
-w = keras.layers.Conv2D(64, 1)(w)
-w = keras.layers.BatchNormalization()(w)
-w = keras.activations.relu(w)
-w = keras.layers.MaxPool2D(2, 2)(w)
-w = keras.layers.Conv2D(64, 3)(w)
-w = keras.layers.Conv2D(64, 3)(w)
-w = keras.layers.Conv2D(256, 1)(w)
-w = keras.layers.BatchNormalization()(w)
-img_output1 = keras.layers.Flatten()(w)
-
-merged_model1 = keras.layers.concatenate([img_output1, ships_input])
-output_layer1 = keras.layers.Dense(256)(merged_model1)
-output_layer1 = keras.layers.Dense(165)(output_layer1)
-
-new_model1 = keras.Model(
-    inputs=[img_input, ships_input], outputs=output_layer1, name="model_1"
-)
-
-new_model1.summary()
-
-x = keras.layers.Conv2D(256, 8)(img_input)
-x = keras.layers.BatchNormalization()(x)
-x = keras.activations.relu(x)
-x = keras.layers.MaxPool2D(2, 2)(x)
-x = keras.layers.Conv2D(128, 1, activation="relu")(x)
-x = keras.layers.Conv2D(128, 5)(x)
-x = keras.layers.BatchNormalization()(x)
-x = keras.activations.relu(x)
-x = keras.layers.MaxPool2D(2, 2)(x)
-x = keras.layers.Conv2D(64, 1, activation="relu")(x)
-x = keras.layers.Conv2D(64, 3)(x)
-x = keras.layers.BatchNormalization()(x)
-x = keras.activations.relu(x)
-x = keras.layers.MaxPool2D(2, 2)(x)
-img_output2 = keras.layers.Flatten()(x)
-
-merged_model2 = keras.layers.concatenate([img_output2, ships_input])
-output_layer2 = keras.layers.Dense(165)(merged_model2)
-
-new_model2 = keras.Model(
-    inputs=[img_input, ships_input], outputs=output_layer2, name="model_2"
-)
-
-new_model2.summary()
-
-y = keras.layers.Conv2D(256, (6, 2))(img_input)
-y = keras.layers.Conv2D(256, (2, 6))(y)
-y = keras.layers.BatchNormalization()(y)
-y = keras.activations.relu(y)
-y = keras.layers.MaxPool2D(2, 2)(y)
-y = keras.layers.Conv2D(128, 4)(y)
-y = keras.layers.BatchNormalization()(y)
-y = keras.activations.relu(y)
-y = keras.layers.MaxPool2D(2, 2)(y)
-y = keras.layers.Conv2D(64, 3)(y)
-y = keras.layers.BatchNormalization()(y)
-y = keras.activations.relu(y)
-y = keras.layers.MaxPool2D(2, 2)(y)
-img_output3 = keras.layers.Flatten()(y)
-
-merged_model3 = keras.layers.concatenate([img_output3, ships_input])
-output_layer3 = keras.layers.Dense(165)(merged_model3)
-
-new_model3 = keras.Model(
-    inputs=[img_input, ships_input], outputs=output_layer3, name="model_3"
-)
-
-new_model3.summary()
-
-z = keras.layers.Conv2D(256, 7)(img_input)
-z = keras.layers.MaxPool2D(2, 2)(z)
-img_output4 = keras.layers.Flatten()(z)
-
-merged_model4 = keras.layers.concatenate([img_output4, ships_input])
-output_layer4 = keras.layers.Dense(165)(merged_model4)
-
-new_model4 = keras.Model(
-    inputs=[img_input, ships_input], outputs=output_layer4, name="model_4"
-)
-
-new_model4.summary()
+new_model1, new_model2, new_model3, new_model4 = define_models()
 
 
-# In[34]:
-
-
-# ships_input = keras.Input(shape =(4,), name = "ships_layer")
-img_input = keras.Input(shape=(41, 41, 1), name="img_layer")
-
-w = keras.layers.Conv2D(64, 8)(img_input)
-w = keras.layers.Conv2D(64, 8)(w)
-w = keras.layers.Conv2D(64, 1)(w)
-w = keras.layers.BatchNormalization()(w)
-w = keras.activations.relu(w)
-w = keras.layers.MaxPool2D(2, 2)(w)
-w = keras.layers.Conv2D(64, 3)(w)
-w = keras.layers.Conv2D(64, 3)(w)
-w = keras.layers.Conv2D(256, 1)(w)
-w = keras.layers.BatchNormalization()(w)
-img_output1 = keras.layers.Flatten()(w)
-
-merged_model1 = keras.layers.concatenate([img_output1])
-output_layer1 = keras.layers.Dense(256)(merged_model1)
-output_layer1 = keras.layers.Dense(165)(output_layer1)
-
-new_model1 = keras.Model(inputs=[img_input], outputs=output_layer1, name="model_1")
-
-new_model1.summary()
-
-x = keras.layers.Conv2D(256, 8)(img_input)
-x = keras.layers.BatchNormalization()(x)
-x = keras.activations.relu(x)
-x = keras.layers.MaxPool2D(2, 2)(x)
-x = keras.layers.Conv2D(128, 1, activation="relu")(x)
-x = keras.layers.Conv2D(128, 5)(x)
-x = keras.layers.BatchNormalization()(x)
-x = keras.activations.relu(x)
-x = keras.layers.MaxPool2D(2, 2)(x)
-x = keras.layers.Conv2D(64, 1, activation="relu")(x)
-x = keras.layers.Conv2D(64, 3)(x)
-x = keras.layers.BatchNormalization()(x)
-x = keras.activations.relu(x)
-x = keras.layers.MaxPool2D(2, 2)(x)
-img_output2 = keras.layers.Flatten()(x)
-
-merged_model2 = keras.layers.concatenate([img_output2])
-output_layer2 = keras.layers.Dense(165)(merged_model2)
-
-new_model2 = keras.Model(inputs=[img_input], outputs=output_layer2, name="model_2")
-
-new_model2.summary()
-
-y = keras.layers.Conv2D(256, (6, 2))(img_input)
-y = keras.layers.Conv2D(256, (2, 6))(y)
-y = keras.layers.BatchNormalization()(y)
-y = keras.activations.relu(y)
-y = keras.layers.MaxPool2D(2, 2)(y)
-y = keras.layers.Conv2D(128, 4)(y)
-y = keras.layers.BatchNormalization()(y)
-y = keras.activations.relu(y)
-y = keras.layers.MaxPool2D(2, 2)(y)
-y = keras.layers.Conv2D(64, 3)(y)
-y = keras.layers.BatchNormalization()(y)
-y = keras.activations.relu(y)
-y = keras.layers.MaxPool2D(2, 2)(y)
-img_output3 = keras.layers.Flatten()(y)
-
-merged_model3 = keras.layers.concatenate([img_output3])
-output_layer3 = keras.layers.Dense(165)(merged_model3)
-
-new_model3 = keras.Model(inputs=[img_input], outputs=output_layer3, name="model_3")
-
-new_model3.summary()
-
-z = keras.layers.Conv2D(256, 7)(img_input)
-z = keras.layers.MaxPool2D(2, 2)(z)
-img_output4 = keras.layers.Flatten()(z)
-
-merged_model4 = keras.layers.concatenate([img_output4])
-output_layer4 = keras.layers.Dense(165)(merged_model4)
-
-new_model4 = keras.Model(inputs=[img_input], outputs=output_layer4, name="model_4")
-
-new_model4.summary()
-
-
-# In[137]:
-
-
-new_model1.compile(
-    optimizer="adam", loss=tf.keras.losses.MeanAbsoluteError(), metrics=["mae", "mse"]
-)
-new_model2.compile(
-    optimizer="adam", loss=tf.keras.losses.MeanAbsoluteError(), metrics=["mae", "mse"]
-)
-new_model3.compile(
-    optimizer="adam", loss=tf.keras.losses.MeanAbsoluteError(), metrics=["mae", "mse"]
-)
-new_model4.compile(
-    optimizer="adam", loss=tf.keras.losses.MeanAbsoluteError(), metrics=["mae", "mse"]
-)
+def model_forward(model, image, ships):
+    if image.shape[1] != 1:
+        image = image.permute(0, 3, 1, 2)
+    features = torch.flatten(model[0](image.float()), start_dim=1)
+    return model[1](torch.cat((features, ships.float()), dim=1))
 
 
 # In[138]:
 
 
-new_model3.fit(
-    [X_train_img, X_train_ships], y_train, epochs=3, batch_size=8, validation_split=0.1
+optimizer = torch.optim.Adam(
+    list(new_model3[0].parameters()) + list(new_model3[1].parameters())
 )
-res = new_model3.evaluate([X_test_img, X_test_ships], y_test)
-print("MAE = " + str(res[0]))
-print("RMSE = " + str((res[2]) ** 0.5))
-preds = new_model3.predict([X_test_img, X_test_ships])
+loss_function = nn.L1Loss()
+train_img = torch.from_numpy(X_train_img).to(DEVICE)
+train_ships = torch.from_numpy(X_train_ships).to(DEVICE)
+train_labels = torch.from_numpy(y_train.astype("float32")).to(DEVICE)
+for epoch in range(3):
+    new_model3[0].train()
+    new_model3[1].train()
+    optimizer.zero_grad()
+    predictions = model_forward(new_model3, train_img, train_ships)
+    loss = loss_function(predictions, train_labels)
+    loss.backward()
+    optimizer.step()
+
+new_model3[0].eval()
+new_model3[1].eval()
+with torch.no_grad():
+    predictions = model_forward(
+        new_model3,
+        torch.from_numpy(X_test_img).to(DEVICE),
+        torch.from_numpy(X_test_ships).to(DEVICE),
+    )
+    res = loss_function(
+        predictions, torch.from_numpy(y_test.astype("float32")).to(DEVICE)
+    )
+print("MAE = " + str(res.item()))
+print(
+    "RMSE = "
+    + str(
+        torch.mean(
+            (predictions - torch.from_numpy(y_test.astype("float32")).to(DEVICE)) ** 2
+        )
+        .sqrt()
+        .item()
+    )
+)
+preds = predictions.cpu().numpy()
 a = np.average(preds, axis=1)
 test["preds"] = a
-
-
-# In[10]:
 
 
 train_no_resample = pd.read_csv("DEV/P06_2018_train.csv")
@@ -462,12 +361,20 @@ len(shap_train_label)
 # In[146]:
 
 
-# shap.explainers._deep.deep_tf.op_handlers["AddV2"] = shap.explainers._deep.deep_tf.passthrough
-shap.explainers._deep.deep_tf.op_handlers["FusedBatchNormV3"] = (
-    shap.explainers._deep.deep_tf.linearity_1d(0)
+e = shap.DeepExplainer(
+    model_forward,
+    [
+        torch.from_numpy(shap_train_img).to(DEVICE),
+        torch.from_numpy(shap_train_ships).to(DEVICE),
+    ],
 )
-e = shap.DeepExplainer(new_model3, [shap_train_img, shap_train_ships])
-shap_values = e.shap_values([X_test_img, X_test_ships])
+shap_values = e.shap_values(
+    [
+        torch.from_numpy(X_test_img).to(DEVICE),
+        torch.from_numpy(X_test_ships).to(DEVICE),
+    ],
+    check_additivity=False,
+)
 # shap.summary_plot(shap_values, X_test_img)
 # shap.plots.beeswarm(shap_values)
 

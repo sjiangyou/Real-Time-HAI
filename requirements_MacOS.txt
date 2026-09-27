@@ -2,6 +2,5 @@ h5py
 numpy
 pandas
 shap
-tensorflow==2.18.0
-tensorflow-metal==1.2.0
+torch
 scikit-learn
