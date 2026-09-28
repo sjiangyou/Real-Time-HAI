@@ -5,7 +5,6 @@
 # 
 # This script adds in the future of each storm's time of landfall to the model's training data.
 
-# In[1]:
 
 
 import numpy as np
@@ -14,14 +13,12 @@ import os
 import re
 
 
-# In[2]:
 
 
 os.chdir(os.path.dirname(os.getcwd()))
 print(os.getcwd())
 
 
-# In[3]:
 
 
 data = pd.read_csv('BRTK_2000to2019_IMERG_SHIPS-RII.csv')
@@ -30,14 +27,12 @@ data = data[["GIS_ID", "JULDAY","LAND_OCEAN","ID"]]
 data
 
 
-# In[4]:
 
 
 s = data[data.ID == "ATL_200001"]
 s
 
 
-# In[5]:
 
 
 final_df = pd.DataFrame(columns = ["GIS_ID", "LOP06", "LOP12", "LOP18", "LOP24"])
@@ -84,7 +79,6 @@ for i in range(data.shape[0]):
 final_df
 
 
-# In[6]:
 
 
 f = final_df
@@ -93,34 +87,23 @@ f["LOP18"] = np.where(f.LOP12 != "Ocean", f.LOP12, f.LOP18)
 f["LOP24"] = np.where(f.LOP18 != "Ocean", f.LOP18, f.LOP24)
 
 
-# In[7]:
 
 
 f
 
 
-# In[8]:
 
 
 original_data = pd.read_csv('BRTK_2000to2019_IMERG_SHIPS-RII.csv')
 original_data
 
 
-# In[9]:
 
 
 original_data = original_data.merge(f, on = "GIS_ID")
 original_data
 
 
-# In[11]:
 
 
 original_data.to_csv("IMERG/Land_Ocean_Futures.csv")
-
-
-# In[ ]:
-
-
-
-

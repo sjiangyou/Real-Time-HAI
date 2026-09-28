@@ -91,7 +91,6 @@ test = test[
 test.columns = ["GIS_ID", "DATE", "PER", "POT", "VMAX", "SHDC_FT", "IC", "Category"]
 
 
-# In[183]:
 
 
 # # train = pd.concat([train, test])
@@ -103,7 +102,6 @@ test.columns = ["GIS_ID", "DATE", "PER", "POT", "VMAX", "SHDC_FT", "IC", "Catego
 # print(test.head(), test.shape)
 
 
-# In[184]:
 
 
 train_img = []
@@ -147,7 +145,6 @@ for f in range(len(test.GIS_ID)):
         pass
 
 
-# In[185]:
 
 
 print(len(train_img))
@@ -158,14 +155,12 @@ print(len(test_ships))
 print(len(test_label))
 
 
-# In[186]:
 
 
 test_ships = np.float64(test_ships)
 test_label = np.float64(test_label)
 
 
-# In[187]:
 
 
 X_train_img = train_img
@@ -176,7 +171,6 @@ X_test_ships = test_ships
 y_test = test_label
 
 
-# In[188]:
 
 
 X_train_img = np.array(X_train_img)
@@ -187,7 +181,6 @@ X_train_ships = X_train_ships.reshape(-1, 4)
 y_train = np.array(y_train)
 
 
-# In[189]:
 
 
 X_test_img = np.array(X_test_img)
@@ -198,14 +191,12 @@ X_test_ships = X_test_ships.reshape(-1, 4)
 y_test = np.array(y_test)
 
 
-# In[190]:
 
 
 print(X_train_img.shape)
 print(X_train_ships.shape)
 
 
-# In[136]:
 
 
 new_model1, new_model2, new_model3, new_model4 = define_models()
@@ -218,7 +209,6 @@ def model_forward(model, image, ships):
     return model[1](torch.cat((features, ships.float()), dim=1))
 
 
-# In[138]:
 
 
 optimizer = torch.optim.Adam(
@@ -281,13 +271,11 @@ train_no_resample.columns = [
 train_no_resample
 
 
-# In[141]:
 
 
 train_no_resample["Category"].value_counts()["Maj"]
 
 
-# In[142]:
 
 
 train_no_resample_TD = train_no_resample[train_no_resample["Category"] == "TD"]
@@ -310,7 +298,6 @@ shap_train = shap_train.reset_index(drop=True)
 shap_train
 
 
-# In[143]:
 
 
 shap_train_img = []
@@ -341,7 +328,6 @@ for f in range(len(shap_train.GIS_ID)):
         pass
 
 
-# In[144]:
 
 
 shap_train_img = np.array(shap_train_img)
@@ -352,13 +338,11 @@ shap_train_ships = shap_train_ships.reshape(-1, 4)
 shap_train_label = np.array(shap_train_label)
 
 
-# In[145]:
 
 
 len(shap_train_label)
 
 
-# In[146]:
 
 
 e = shap.DeepExplainer(
@@ -379,31 +363,26 @@ shap_values = e.shap_values(
 # shap.plots.beeswarm(shap_values)
 
 
-# In[36]:
 
 
 shap_values
 
 
-# In[147]:
 
 
 np.shape(shap_values[0][1])
 
 
-# In[148]:
 
 
 shap_values[0][1][0][3]
 
 
-# In[149]:
 
 
 shap_values[0][1]
 
 
-# In[150]:
 
 
 shap_a = []
@@ -418,13 +397,11 @@ for node in range(165):
             shap_b.append(np.sum(shap_values[node][1][images][ships]))
 
 
-# In[151]:
 
 
 len(shap_b)
 
 
-# In[152]:
 
 
 shap_b
@@ -436,50 +413,40 @@ shap_PER = [shap_b[i] for i in range(2, len(shap_b), 4)]
 shap_SHDC = [shap_b[i] for i in range(3, len(shap_b), 4)]
 
 
-# In[178]:
 
 
 for shaps in [shap_a, shap_VMAX, shap_POT, shap_PER, shap_SHDC]:
     print(np.mean(shaps))
 
 
-# In[44]:
 
 
 np.sum(shap_b)
 
 
-# In[31]:
 
 
 (np.sum(np.sum(np.abs(shap_values[0][0][0]), axis=0), axis=0))
 
 
-# In[30]:
 
 
 shap_a
 max(shap_a)
 
 
-# In[45]:
 
 
 shap.plots.force(e.expected_value[0], shap_values[0], [X_test_img[0], X_test_ships[0]])
 shap.plots.beeswarm(shap_values)
 
 
-# In[68]:
 
 
 np.shape(shap_values[0][0][0])
 
 
-# In[100]:
 
 
 shap_values_nov21 = shap_values
 e_nov21 = e
-
-
-# In[ ]:
