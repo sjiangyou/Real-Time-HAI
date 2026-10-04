@@ -6,6 +6,8 @@
 *.zip
 *.dat
 *.png
+*.npz
+*.pt
 *.RT-H5
 .RData
 .Rhistory
@@ -23,4 +25,4 @@ pyvenv.cfg
 **/lib64
 **/share
 **/etc
-test.py
+**__pycache__**
