@@ -4,10 +4,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import shap
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset, random_split
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -580,209 +580,28 @@ def run_models(
 
 
 # ---------------------------------------------------------------------------
-# SHAP analysis
-# ---------------------------------------------------------------------------
-
-
-def shap_analysis(new_model1, X_test_img, X_test_ships):
-    train_no_resample = pd.read_csv("IMERG/Model_Data/ATL_train.csv")
-
-    train_no_resample = train_no_resample[
-        [
-            "GIS_ID",
-            "DATE",
-            "VMAX",
-            "SHIPS_PER",
-            "SHIPS_POT_Avg24h",
-            "SHIPS_NOHC_Avg24h",
-            "SHIPS_SHDC_Avg24h",
-            "SHIPS_CFLX_Avg24h",
-            "SHIPS_D200_Avg24h",
-            "SHIPS_MTPW_108h",
-            "SHIPS_PC2",
-            "SHIPS_IR00_12h",
-            "Category",
-            "RI",
-        ]
-    ]
-
-    train_no_resample = train_no_resample.set_axis(
-        [
-            "GIS_ID",
-            "DATE",
-            "VMAX",
-            "PER",
-            "POT",
-            "NOHC",
-            "SHDC",
-            "ICDA",
-            "D200",
-            "TPW",
-            "PC2",
-            "SDBT",
-            "Category",
-            "RI",
-        ],
-        axis=1,
-    )
-
-    train_no_resample["RI"] = pd.to_numeric(
-        train_no_resample["RI"],
-        errors="coerce",
-    )
-
-    print(train_no_resample["RI"].value_counts()[0])
-
-    train_no_resample_false = train_no_resample[train_no_resample["RI"] == 0]
-    train_no_resample_true = train_no_resample[train_no_resample["RI"] == 1]
-
-    train_no_resample_false = train_no_resample_false.sample(
-        100,
-        random_state=42,
-    )
-    train_no_resample_true = train_no_resample_true.sample(
-        100,
-        random_state=42,
-    )
-
-    shap_train = pd.concat(
-        [
-            train_no_resample_false,
-            train_no_resample_true,
-        ]
-    ).reset_index(drop=True)
-
-    shap_train_img = []
-    shap_train_ships = []
-    shap_train_label = []
-
-    for f in range(len(shap_train.GIS_ID)):
-        filename = "IMERG_CSV/" + shap_train.GIS_ID.iloc[f] + ".csv"
-
-        try:
-            temp = pd.read_csv(filename, header=None)
-
-            if temp.shape != (121, 121):
-                continue
-
-            temp = temp.iloc[30:91, 30:91]
-            temp = np.array(temp)
-
-            shap_train_img.append(temp)
-            shap_train_label.append(shap_train.RI.iloc[f])
-
-            ships = np.array(
-                [
-                    shap_train.VMAX.iloc[f],
-                    shap_train.PER.iloc[f],
-                    shap_train.POT.iloc[f],
-                    shap_train.NOHC.iloc[f],
-                    shap_train.SHDC.iloc[f],
-                    shap_train.ICDA.iloc[f],
-                    shap_train.D200.iloc[f],
-                    shap_train.TPW.iloc[f],
-                    shap_train.PC2.iloc[f],
-                    shap_train.SDBT.iloc[f],
-                ]
-            )
-
-            shap_train_ships.append(ships)
-
-        except Exception:
-            pass
-
-    shap_train_img = np.array(shap_train_img).astype("float32")
-    shap_train_img = shap_train_img.reshape(-1, 61, 61, 1)
-    shap_train_img = np.transpose(shap_train_img, (0, 3, 1, 2))
-
-    shap_train_ships = np.array(shap_train_ships).astype("float32")
-    shap_train_ships = shap_train_ships.reshape(-1, 10)
-
-    shap_train_label = np.array(shap_train_label)
-
-    if len(shap_train_img) == 0:
-        print("No SHAP background images were loaded.")
-        return
-
-    # SHAP's PyTorch DeepExplainer accepts a list of tensor inputs.
-    new_model1.eval()
-
-    background_img = torch.from_numpy(shap_train_img).to(DEVICE)
-    background_ships = torch.from_numpy(shap_train_ships).to(DEVICE)
-
-    test_img = torch.from_numpy(X_test_img).to(DEVICE)
-    test_ships = torch.from_numpy(X_test_ships).to(DEVICE)
-
-    explainer = shap.DeepExplainer(new_model1, [background_img, background_ships])
-
-    shap_values = explainer.shap_values([test_img, test_ships], check_additivity=False)
-
-    # SHAP has returned different container shapes across versions.
-    # Normalize the result enough to handle the common PyTorch formats.
-    if isinstance(shap_values, list):
-        if len(shap_values) == 1 and isinstance(shap_values[0], list):
-            shap_values = shap_values[0]
-
-        if len(shap_values) == 2:
-            shap_img_values = np.asarray(shap_values[0])
-            shap_ship_values = np.asarray(shap_values[1])
-        else:
-            print("Unexpected SHAP output format.")
-            return
-
-    else:
-        print("Unexpected SHAP output format.")
-        return
-
-    # Remove the final singleton output dimension when present.
-    if shap_img_values.ndim == 5 and shap_img_values.shape[-1] == 1:
-        shap_img_values = shap_img_values[..., 0]
-
-    if shap_ship_values.ndim == 3 and shap_ship_values.shape[-1] == 1:
-        shap_ship_values = shap_ship_values[..., 0]
-
-    shap_image = [np.sum(sample) for sample in shap_img_values]
-
-    shap_ships = [np.sum(sample) for sample in shap_ship_values]
-
-    # The original code attempted to extract these ten variables.
-    # Here they are indexed by feature instead of using a stride of four.
-    shap_VMAX = shap_ship_values[:, 0].flatten()
-    shap_PER = shap_ship_values[:, 1].flatten()
-    shap_POT = shap_ship_values[:, 2].flatten()
-    shap_NOHC = shap_ship_values[:, 3].flatten()
-    shap_SHDC = shap_ship_values[:, 4].flatten()
-    shap_ICDA = shap_ship_values[:, 5].flatten()
-    shap_D200 = shap_ship_values[:, 6].flatten()
-    shap_TPW = shap_ship_values[:, 7].flatten()
-    shap_PC2 = shap_ship_values[:, 8].flatten()
-    shap_SDBT = shap_ship_values[:, 9].flatten()
-
-    for name, values in [
-        ("Image", shap_image),
-        ("VMAX", shap_VMAX),
-        ("PER", shap_PER),
-        ("POT", shap_POT),
-        ("NOHC", shap_NOHC),
-        ("SHDC", shap_SHDC),
-        ("ICDA", shap_ICDA),
-        ("D200", shap_D200),
-        ("TPW", shap_TPW),
-        ("PC2", shap_PC2),
-        ("SDBT", shap_SDBT),
-    ]:
-        print(name)
-        print(f"Mean: {np.mean(values)}")
-        print(f"Median: {np.median(values)}")
-        print(f"Max: {np.max(values)}")
-        print(f"Min: {np.min(values)}")
-        print()
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Train and evaluate the HRICNN rapid-intensification models."
+    )
+    parser.add_argument(
+        "--image-only",
+        action="store_true",
+        help="Ignore all SHIPS variables and train models from image data only.",
+    )
+    parser.add_argument(
+        "--save-model",
+        type=Path,
+        help="Save the selected model checkpoint for later SHAP analysis.",
+    )
+    args = parser.parse_args()
+    # Resolve this before changing directories so a relative path is always
+    # relative to the directory from which the command was launched.
+    if args.save_model is not None:
+        args.save_model = args.save_model.resolve()
     os.chdir(Path(__file__).parent.parent)
-    main()
+    seed_everything(seed=42)
+    main(image_only=args.image_only, save_model=args.save_model)
