@@ -3,6 +3,7 @@ library(here)
 setwd(here::here("HRICNN"))
 data <- read.csv("BRTK_2000to2019_IMERG_SHIPS-RII.csv")
 trainend <- 2016000000
+valend <- 2018000000
 
 data_24_R <- data[, grepl(pattern = "Avg24", colnames(data))]
 data_24_L <- data[, c(1,2,3,4,9,10,11,12,18,13,24,25,75,76,79,80,81)]
@@ -48,11 +49,13 @@ if(!dir.exists("IMERG/Model_Data/")){
 for(b in unique(data_24$BASIN)){
     basindata <- data_24[data_24$BASIN == b,]
     test <- basindata[basindata$DATE>= trainend,]
+    val <- test[test$DATE < valend,]
     train <- basindata[basindata$DATE < trainend,]
     # train_resample <- do.call(rbind, lapply(unique(basindata$RI), function(y) doresample(train,y, max(table(train$RI)))))
     # write.csv(train_resample, file = paste0("IMERG/Model_Data/", b, "_", 'train_resample.csv'))
     write.csv(train, file = paste0("IMERG/Model_Data/", b, "_", 'train.csv'))
     write.csv(test, file = paste0("IMERG/Model_Data/", b, "_", 'test.csv'))
+    write.csv(val, file = paste0("IMERG/Model_Data/", b, "_", 'val.csv'))
 }
 
 # data_24 <- do.call(rbind, lapply(unique(data_24$RI), function(y) doresample(data_24, y, max(table(data_24$RI)))))
