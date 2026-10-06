@@ -1,6 +1,5 @@
 *.txt
-!requirements_Linux.txt
-!requirements_MacOS.txt
+!requirements.txt
 *.csv
 *.docx
 *.zip
