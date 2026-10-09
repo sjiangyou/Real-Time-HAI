@@ -22,7 +22,6 @@ EPOCH_CANDIDATES = range(1, 101)
 BATCH_SIZE_CANDIDATES = (1, 2, 4, 8, 16)
 LEARNING_RATE = 0.001
 VALIDATION_SPLIT = 0.1
-TUNING_LOSS_CSV = "rain_hyperparameter_validation_losses.csv"
 
 
 class BinaryFocalCrossEntropy(nn.Module):
@@ -62,19 +61,25 @@ def _save_model_checkpoint(model, path):
     print(f"Saved model to {path}")
 
 
-def main(image_only=False, save_model=None):
+def main(image_only=False, save_model=None, loss_csv_path=None):
     gpu_test()
 
-    data = load_data()
+    data = load_data(include_year=True)
     (
         train_img,
         train_ships,
         train_label,
+        train_year,
         test_img,
         test_ships,
         test_label,
     ) = data
-    validation_img, validation_ships, validation_label = load_validation_data()
+    (
+        validation_img,
+        validation_ships,
+        validation_label,
+        validation_year,
+    ) = load_validation_data(include_year=True)
     models = model_setup(
         train_img,
         train_ships,
@@ -90,13 +95,16 @@ def main(image_only=False, save_model=None):
         train_img,
         train_ships,
         train_label,
+        train_year,
         validation_img,
         validation_ships,
         validation_label,
+        validation_year,
         test_img,
         test_ships,
         test_label,
         use_ships=not image_only,
+        loss_csv_path=loss_csv_path,
     )
 
     if save_model is not None:
@@ -233,9 +241,11 @@ def load_data(include_year=False):
     return data
 
 
-def load_validation_data():
+def load_validation_data(include_year=False):
     """Load the explicit validation split using the shared dataframe loader."""
     validation = _load_arrays(_prepare_dataframe("IMERG/Model_Data/ATL_val.csv"))
+    if include_year:
+        return validation
     return validation[:3]
 
 
@@ -496,24 +506,35 @@ def select_hyperparameters(
     X_train_img,
     X_train_ships,
     y_train,
+    years_train,
     X_validation_img=None,
     X_validation_ships=None,
     y_validation=None,
+    years_validation=None,
     epoch_candidates=EPOCH_CANDIDATES,
     batch_size_candidates=BATCH_SIZE_CANDIDATES,
     model_classes=(Model1, Model2, Model3),
     seed=42,
     use_ships=True,
-    loss_csv_path=TUNING_LOSS_CSV,
+    loss_csv_path=None,
 ):
-    """Select architecture, epochs, and batch size using the validation set.
+    """Select hyperparameters with staged leave-one-year-out cross-validation.
 
-    Every candidate is fit only on the training arrays.  Its validation loss
-    is recorded after each epoch, and the candidate with the lowest validation
-    loss is selected.  The test set is intentionally not used here.
+    The prepared training and validation splits are pooled, while the test
+    split is never passed to this function. Each distinct year is held out in
+    turn. Year-level losses are averaged equally, so years with more samples
+    do not dominate selection. All architecture/batch combinations are
+    evaluated through epoch 10 first; only the best batch size for each
+    architecture is evaluated beyond epoch 10.
     """
-    if X_validation_img is None or X_validation_ships is None or y_validation is None:
-        raise ValueError("An explicit validation dataset is required.")
+    if (
+        X_validation_img is None
+        or X_validation_ships is None
+        or y_validation is None
+        or years_train is None
+        or years_validation is None
+    ):
+        raise ValueError("Training and validation arrays with years are required.")
     epoch_candidates = tuple(sorted(set(int(epoch) for epoch in epoch_candidates)))
     batch_size_candidates = tuple(
         sorted(set(int(size) for size in batch_size_candidates))
@@ -521,71 +542,166 @@ def select_hyperparameters(
     if not epoch_candidates or not batch_size_candidates or not model_classes:
         raise ValueError("Candidate architectures and hyperparameters cannot be empty.")
     max_epochs = max(epoch_candidates)
-    loss_csv_path = Path(loss_csv_path)
+    loss_csv_path = Path(loss_csv_path or "hyperparameter_validation_losses.csv")
+    loss_csv_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(columns=["Model", "Epoch", "Batch", "Loss"]).to_csv(
         loss_csv_path, index=False
     )
+    train_img = np.concatenate((X_train_img, X_validation_img), axis=0)
+    train_ships = np.concatenate((X_train_ships, X_validation_ships), axis=0)
+    train_labels = np.concatenate((y_train, y_validation), axis=0)
+    years = np.concatenate((years_train, years_validation), axis=0)
+    unique_years = np.unique(years)
+    if unique_years.size < 2:
+        raise ValueError("At least two distinct years are required for validation.")
+    if not (len(train_img) == len(train_ships) == len(train_labels) == len(years)):
+        raise ValueError(
+            "Training, labels, and years must contain the same number of samples."
+        )
+
     scores = np.full(
         (len(model_classes), len(batch_size_candidates), max_epochs),
         np.nan,
         dtype=np.float64,
     )
     criterion = BinaryFocalCrossEntropy()
-    validation_loader = DataLoader(
-        _make_dataset(X_validation_img, X_validation_ships, y_validation),
-        batch_size=max(batch_size_candidates),
-        shuffle=False,
-    )
 
-    for model_index, model_class in enumerate(model_classes):
-        for batch_index, batch_size in enumerate(batch_size_candidates):
-            torch.manual_seed(seed + model_index * 1000 + batch_index)
+    def evaluate_configuration(
+        model_index, model_class, batch_index, batch_size, epochs_to_run
+    ):
+        """Train one architecture/batch configuration across all year folds."""
+        fold_losses = np.full((len(unique_years), max_epochs), np.nan)
+        for fold_index, held_out_year in enumerate(unique_years):
+            train_indices = np.flatnonzero(years != held_out_year)
+            validation_indices = np.flatnonzero(years == held_out_year)
+            model_seed = seed + model_index * 1000 + batch_index * 100 + fold_index
+            torch.manual_seed(model_seed)
             model = model_class(use_ships=use_ships).to(DEVICE)
             train_loader = DataLoader(
-                _make_dataset(X_train_img, X_train_ships, y_train),
+                _make_dataset(
+                    train_img[train_indices],
+                    train_ships[train_indices],
+                    train_labels[train_indices],
+                ),
                 batch_size=batch_size,
                 shuffle=True,
-                generator=torch.Generator().manual_seed(
-                    seed + model_index * 1000 + batch_index
-                ),
+                generator=torch.Generator().manual_seed(model_seed),
             )
-            print(
-                f"Starting hyperparameter test: architecture={model_class.__name__}, "
-                f"batch size={batch_size}, epochs=1-{max_epochs}",
-                flush=True,
+            validation_loader = DataLoader(
+                _make_dataset(
+                    train_img[validation_indices],
+                    train_ships[validation_indices],
+                    train_labels[validation_indices],
+                ),
+                batch_size=max(batch_size_candidates),
+                shuffle=False,
             )
             optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-            for epoch in range(max_epochs):
-                train_loss = _train_epoch(model, train_loader, criterion, optimizer)
-                validation_loss = evaluate_model(model, validation_loader, criterion)[0]
-                if epoch + 1 in epoch_candidates:
-                    scores[model_index, batch_index, epoch] = validation_loss
+            for epoch in range(epochs_to_run):
+                _train_epoch(model, train_loader, criterion, optimizer)
+                fold_losses[fold_index, epoch] = evaluate_model(
+                    model, validation_loader, criterion
+                )[0]
+            print(
+                f"{model_class.__name__} | batch size={batch_size} | "
+                f"held-out year={held_out_year} complete",
+                flush=True,
+            )
+        return np.mean(fold_losses, axis=0)
+
+    stage_one_epochs = min(10, max_epochs)
+    stage_one_candidates = tuple(
+        epoch for epoch in epoch_candidates if epoch <= stage_one_epochs
+    )
+    stage_two_candidates = tuple(
+        epoch for epoch in epoch_candidates if epoch > stage_one_epochs
+    )
+
+    # Stage one evaluates every architecture/batch pair only through epoch 10.
+    # This identifies one promising batch size for each architecture.
+    stage_one_best_batches = {}
+    for model_index, model_class in enumerate(model_classes):
+        best_batch_index = None
+        best_stage_one_loss = np.inf
+        for batch_index, batch_size in enumerate(batch_size_candidates):
+            print(
+                f"Starting hyperparameter test: architecture={model_class.__name__}, "
+                f"batch size={batch_size}, epochs=1-{stage_one_epochs}, "
+                f"years={len(unique_years)}",
+                flush=True,
+            )
+            mean_losses = evaluate_configuration(
+                model_index,
+                model_class,
+                batch_index,
+                batch_size,
+                stage_one_epochs,
+            )
+            for epoch in stage_one_candidates:
+                validation_loss = mean_losses[epoch - 1]
+                scores[model_index, batch_index, epoch - 1] = validation_loss
                 pd.DataFrame(
                     [
                         {
                             "Model": model_class.__name__,
-                            "Epoch": epoch + 1,
+                            "Epoch": epoch,
                             "Batch": batch_size,
                             "Loss": validation_loss,
                         }
                     ]
-                ).to_csv(
-                    loss_csv_path,
-                    mode="a",
-                    header=False,
-                    index=False,
-                )
-                print(
-                    f"{model_class.__name__} | batch size={batch_size} | "
-                    f"epoch {epoch + 1}/{max_epochs} | "
-                    f"train loss={train_loss:.6f} | "
-                    f"validation loss={validation_loss:.6f}",
-                    flush=True,
-                )
+                ).to_csv(loss_csv_path, mode="a", header=False, index=False)
             print(
                 f"Validation architecture {model_class.__name__}, "
-                f"batch size {batch_size} complete"
+                f"batch size {batch_size} complete; "
+                f"stage-one loss={np.min(mean_losses[:stage_one_epochs]):.6f}"
             )
+            stage_one_loss = np.min(mean_losses[:stage_one_epochs])
+            if stage_one_loss < best_stage_one_loss:
+                best_stage_one_loss = stage_one_loss
+                best_batch_index = batch_index
+        stage_one_best_batches[model_index] = best_batch_index
+        print(
+            f"Stage one selected {model_class.__name__} batch size "
+            f"{batch_size_candidates[best_batch_index]}"
+        )
+
+    # Stage two searches epoch counts only for the best batch size per
+    # architecture. The selected configurations are retrained from epoch one
+    # so their later-epoch losses remain directly comparable.
+    for model_index, model_class in enumerate(model_classes):
+        batch_index = stage_one_best_batches[model_index]
+        batch_size = batch_size_candidates[batch_index]
+        if not stage_two_candidates:
+            continue
+        print(
+            f"Starting stage two: architecture={model_class.__name__}, "
+            f"batch size={batch_size}, epochs=1-{max_epochs}, "
+            f"years={len(unique_years)}",
+            flush=True,
+        )
+        mean_losses = evaluate_configuration(
+            model_index,
+            model_class,
+            batch_index,
+            batch_size,
+            max_epochs,
+        )
+        for epoch in stage_two_candidates:
+            validation_loss = mean_losses[epoch - 1]
+            scores[model_index, batch_index, epoch - 1] = validation_loss
+            pd.DataFrame(
+                [
+                    {
+                        "Model": model_class.__name__,
+                        "Epoch": epoch,
+                        "Batch": batch_size,
+                        "Loss": validation_loss,
+                    }
+                ]
+            ).to_csv(loss_csv_path, mode="a", header=False, index=False)
+        print(
+            f"Stage two complete: {model_class.__name__}; " f"batch size={batch_size}"
+        )
 
     print(f"Validation losses saved to {loss_csv_path}")
 
@@ -616,32 +732,38 @@ def run_models(
     X_train_img,
     X_train_ships,
     y_train,
+    years_train,
     X_validation_img,
     X_validation_ships,
     y_validation,
+    years_validation,
     X_test_img,
     X_test_ships,
     y_test,
     use_ships=True,
+    loss_csv_path=None,
 ):
     best_model_class, best_epochs, best_batch_size = select_hyperparameters(
         X_train_img,
         X_train_ships,
         y_train,
+        years_train,
         X_validation_img,
         X_validation_ships,
         y_validation,
+        years_validation,
         use_ships=use_ships,
+        loss_csv_path=loss_csv_path,
     )
 
     # Selection models are discarded; fit the winning architecture on all
-    # training samples before evaluating on the untouched test set.
+    # pooled train/validation samples before evaluating on the untouched test set.
     new_model1 = best_model_class(use_ships=use_ships).to(DEVICE)
     new_model1 = train_model(
         new_model1,
-        X_train_img,
-        X_train_ships,
-        y_train,
+        np.concatenate((X_train_img, X_validation_img), axis=0),
+        np.concatenate((X_train_ships, X_validation_ships), axis=0),
+        np.concatenate((y_train, y_validation), axis=0),
         epochs=best_epochs,
         batch_size=best_batch_size,
         use_ships=use_ships,
@@ -697,11 +819,22 @@ if __name__ == "__main__":
         type=Path,
         help="Save the selected model checkpoint for later SHAP analysis.",
     )
+    parser.add_argument(
+        "--loss-csv-path",
+        type=Path,
+        default=Path("rain_hyperparameter_validation_losses.csv"),
+        help="Path to save hyperparameter tuning losses.",
+    )
     args = parser.parse_args()
-    # Resolve this before changing directories so a relative path is always
-    # relative to the directory from which the command was launched.
+    # Resolve output paths before changing directories so relative paths are
+    # always relative to the directory from which the command was launched.
     if args.save_model is not None:
         args.save_model = args.save_model.resolve()
+    args.loss_csv_path = args.loss_csv_path.resolve()
     os.chdir(Path(__file__).parent.parent)
     seed_everything(seed=42)
-    main(image_only=args.image_only, save_model=args.save_model)
+    main(
+        image_only=args.image_only,
+        save_model=args.save_model,
+        loss_csv_path=args.loss_csv_path,
+    )

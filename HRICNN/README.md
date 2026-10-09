@@ -7,8 +7,10 @@ IMERG rainfall image and, by default, ten SHIPS environmental variables.
 
 ## Data preparation
 
-The scripts expect to be run from this directory. Before training, make sure
-the following inputs are available:
+Run the experimentation script from the repository root. First create the
+shared Python and R environments with `source Environment_Setup.sh`; this
+restores the R packages recorded in the root `renv.lock`. Before training,
+make sure the following inputs are available:
 
 - `BRTK_2000to2019_IMERG_SHIPS-RII.csv`
 - `IMERG_CSV/<GIS_ID>.csv` for each storm observation
@@ -17,43 +19,59 @@ Run the R preprocessing script to remove incomplete records, calculate the RI
 label, and create the model splits:
 
 ```bash
-Rscript src/Model_Prep.R
+Rscript HRICNN/src/Model_Prep.R
 ```
 
 The script writes basin-specific files to `IMERG/Model_Data/`. The training
 split contains observations before 2016, the validation split contains 2016–
 2017 observations, and the test split contains observations from 2016 onward.
-The validation split is used for hyperparameter selection before final test
-evaluation.
+The prepared training and validation splits are pooled for hyperparameter
+selection; the test split remains untouched.
 
 The Python loader currently trains on the Atlantic files:
 `ATL_train.csv`, `ATL_val.csv`, and `ATL_test.csv`.
 
-## Train and evaluate
-
-From `HRICNN/`, run:
+The commands below are also collected in `HRICNN/Experiment.sh`, which runs
+both the SHIPS-enabled and image-only experiments:
 
 ```bash
-python src/RI_TC_Prediction.py
+./HRICNN/Experiment.sh
+```
+
+## Train and evaluate
+
+From the repository root, run:
+
+```bash
+python HRICNN/src/RI_TC_Prediction.py
 ```
 
 Training is deterministic with seed 42. The script evaluates three model
 architectures, batch sizes 1, 2, 4, 8, and 16, and 1–100 epochs using focal
-loss on the validation split. It selects the combination with the lowest
-validation loss, retrains that architecture on the training split, and reports
-test loss, MAE, and MSE. Validation results are written to
-`rain_hyperparameter_validation_losses.csv`.
+loss. Hyperparameters are selected with staged leave-one-year-out cross-validation
+over the pooled training and validation splits. All architecture/batch
+combinations are evaluated through epoch 10, then only the best batch size for
+each architecture continues through the remaining epoch candidates. Each year
+contributes equally to the mean validation loss. The selected architecture is
+retrained on all pooled training and validation data, then evaluated on the
+untouched test set.
+Validation results are written to the path supplied with `--loss_csv_path`,
+with one row per candidate and columns `Model`, `Epoch`, `Batch`, and `Loss`.
 
 To train using only the satellite image, without SHIPS variables, use:
 
 ```bash
-python src/RI_TC_Prediction.py --image-only
+python HRICNN/src/RI_TC_Prediction.py \
+  --image-only \
+  --loss_csv_path HRICNN/Results/image_hyperparameter_validation_losses.csv
 ```
 
 Save the selected model checkpoint with `--save-model`:
 
 ```bash
-python src/RI_TC_Prediction.py --save-model models/ri_model.pt
+python HRICNN/src/RI_TC_Prediction.py \
+  --save-model HRICNN/Models/ri_model.pt \
+  --loss_csv_path HRICNN/Results/ri_hyperparameter_validation_losses.csv
 ```
 
 The checkpoint includes the selected architecture and whether SHIPS inputs
@@ -66,7 +84,8 @@ Generate SHAP values by passing the saved PyTorch model path as the first
 argument:
 
 ```bash
-python src/SHAP_Analysis.py models/ri_model.pt --output results/ri_shap.npz
+python HRICNN/src/SHAP_Analysis.py HRICNN/Models/ri_model.pt \
+  --output "$PWD/HRICNN/Results/ri_shap.npz"
 ```
 
 The command uses a balanced background sample from the training data and
@@ -82,8 +101,8 @@ For a raw `state_dict`, specify its architecture with `--model-class`
 was trained without SHIPS variables:
 
 ```bash
-python src/SHAP_Analysis.py models/model_state_dict.pt \
-  --model-class Model1 --image-only --output results/image_shap.npz
+python HRICNN/src/SHAP_Analysis.py HRICNN/Models/model_state_dict.pt \
+  --model-class Model1 --image-only --output "$PWD/HRICNN/Results/image_shap.npz"
 ```
 
 The compressed NumPy output contains `image_shap`, `predictions`, and

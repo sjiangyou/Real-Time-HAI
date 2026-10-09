@@ -35,7 +35,35 @@ Below is a diagram illustrating the architecture of the CNN models used in this 
 - HCNN Model Explanation: [YouTube Link](https://youtu.be/_1DFHKlfxO8)
 - HRICNN Model Explanation: [YouTube Link](https://youtu.be/WxH0oknacfo)
 
-# Dependencies
-- Python 3.12
-- TensorFlow
-- R
+# Requirements
+- Python 3.14
+- R 4.6.1 (the version recorded in `renv.lock`)
+- Python dependencies listed in `requirements.txt`
+- A GPU is very helpful for speeding up model training and evaluation, but not strictly required for running the code.
+
+# Setup and Experimentation
+From the repository root, create the Python virtual environment and restore the
+project-local R packages with:
+
+```bash
+./Environment_Setup.sh && source .venv/bin/activate
+```
+
+The setup script restores the R environment from `renv.lock` using
+`renv::restore(prompt = FALSE)`. The committed `.Rprofile` and `renv/`
+bootstrap files also ensure the project-local R library is activated when R is
+started from the repository root. R package installation may require network
+access the first time setup is run.
+
+Each model has its own source code and experiment workflow. Run experimentation
+scripts from the repository root. HRICNN's complete preprocessing, training,
+evaluation, and SHAP workflow is documented in
+[`HRICNN/README.md`](HRICNN/README.md) and can be run with:
+
+```bash
+./HRICNN/Experiment.sh
+```
+
+The HCNN and HIECNN directories currently contain their source code and
+model-specific preprocessing scripts; consult their directory READMEs and
+scripts for those workflows.
