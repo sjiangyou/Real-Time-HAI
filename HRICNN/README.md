@@ -57,6 +57,10 @@ retrained on all pooled training and validation data, then evaluated on the
 untouched test set.
 Validation results are written to the path supplied with `--loss_csv_path`,
 with one row per candidate and columns `Model`, `Epoch`, `Batch`, and `Loss`.
+Pass `--output-csv-path` to save the valid test observations together with a
+`Prediction` column containing the selected model's test-set predictions. Rows
+whose IMERG image is missing or has the wrong shape are omitted so that every
+saved prediction remains aligned with its input row.
 
 To train using only the satellite image, without SHIPS variables, use:
 
@@ -71,7 +75,8 @@ Save the selected model checkpoint with `--save-model`:
 ```bash
 python HRICNN/src/RI_TC_Prediction.py \
   --save-model HRICNN/Models/ri_model.pt \
-  --loss_csv_path HRICNN/Results/ri_hyperparameter_validation_losses.csv
+  --loss-csv-path HRICNN/Results/ri_hyperparameter_validation_losses.csv \
+  --output-csv-path HRICNN/Results/ri_test_predictions.csv
 ```
 
 The checkpoint includes the selected architecture and whether SHIPS inputs

@@ -61,10 +61,13 @@ def _save_model_checkpoint(model, path):
     print(f"Saved model to {path}")
 
 
-def main(image_only=False, save_model=None, loss_csv_path=None):
+def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=None):
     gpu_test()
 
-    data = load_data(include_year=True)
+    data, test_dataframe = load_data(
+        include_year=True,
+        return_test_dataframe=True,
+    )
     (
         train_img,
         train_ships,
@@ -90,7 +93,7 @@ def main(image_only=False, save_model=None, loss_csv_path=None):
         use_ships=not image_only,
     )
 
-    trained_model, _ = run_models(
+    trained_model, predictions = run_models(
         *models,
         train_img,
         train_ships,
@@ -106,6 +109,14 @@ def main(image_only=False, save_model=None, loss_csv_path=None):
         use_ships=not image_only,
         loss_csv_path=loss_csv_path,
     )
+
+    if output_csv_path is not None:
+        test_dataframe = test_dataframe.copy()
+        test_dataframe["Prediction"] = predictions
+        output_csv_path = Path(output_csv_path)
+        output_csv_path.parent.mkdir(parents=True, exist_ok=True)
+        test_dataframe.to_csv(output_csv_path, index=False)
+        print(f"Test predictions saved to {output_csv_path}")
 
     if save_model is not None:
         _save_model_checkpoint(trained_model, save_model)
@@ -151,10 +162,11 @@ def seed_everything(seed=42):
 # ---------------------------------------------------------------------------
 
 
-def _load_arrays(dataframe):
-    """Load image, SHIPS, label, and year arrays from one prepared dataframe."""
+def _load_arrays(dataframe, return_valid_indices=False):
+    """Load model arrays and optionally return rows with valid image inputs."""
     images, ships_data, labels, years = [], [], [], []
-    for row in dataframe.itertuples(index=False):
+    valid_indices = []
+    for index, row in enumerate(dataframe.itertuples(index=False)):
         try:
             temp = pd.read_csv(f"IMERG_CSV/{row.GIS_ID}.csv", header=None)
             if temp.shape != (121, 121):
@@ -179,16 +191,20 @@ def _load_arrays(dataframe):
                     ]
                 )
             )
+            valid_indices.append(index)
         except Exception:
             pass
 
     X_img = np.asarray(images).reshape(-1, 61, 61, 1).astype("float32")
-    return (
+    arrays = (
         np.transpose(X_img, (0, 3, 1, 2)),
         np.asarray(ships_data).reshape(-1, 10).astype("float32"),
         np.asarray(labels).astype("float32"),
         np.asarray(years),
     )
+    if return_valid_indices:
+        return arrays, np.asarray(valid_indices, dtype=np.int64)
+    return arrays
 
 
 def _prepare_dataframe(path):
@@ -231,13 +247,23 @@ def _prepare_dataframe(path):
     return dataframe
 
 
-def load_data(include_year=False):
-    """Load train and test splits using the shared dataframe loader."""
+def load_data(include_year=False, return_test_dataframe=False):
+    """Load train/test arrays and optionally the prediction-aligned test dataframe."""
     train = _load_arrays(_prepare_dataframe("IMERG/Model_Data/ATL_train.csv"))
-    test = _load_arrays(_prepare_dataframe("IMERG/Model_Data/ATL_test.csv"))
+    test_dataframe = _prepare_dataframe("IMERG/Model_Data/ATL_test.csv")
+    if return_test_dataframe:
+        test, valid_indices = _load_arrays(
+            test_dataframe,
+            return_valid_indices=True,
+        )
+        test_dataframe = test_dataframe.iloc[valid_indices].reset_index(drop=True)
+    else:
+        test = _load_arrays(test_dataframe)
     data = train[:3] + test[:3]
     if include_year:
-        return train[:3] + (train[3],) + test[:3]
+        data = train[:3] + (train[3],) + test[:3]
+    if return_test_dataframe:
+        return data, test_dataframe
     return data
 
 
@@ -825,16 +851,24 @@ if __name__ == "__main__":
         default=Path("rain_hyperparameter_validation_losses.csv"),
         help="Path to save hyperparameter tuning losses.",
     )
+    parser.add_argument(
+        "--output-csv-path",
+        type=Path,
+        help="Path to save the test dataframe with model predictions.",
+    )
     args = parser.parse_args()
     # Resolve output paths before changing directories so relative paths are
     # always relative to the directory from which the command was launched.
     if args.save_model is not None:
         args.save_model = args.save_model.resolve()
     args.loss_csv_path = args.loss_csv_path.resolve()
+    if args.output_csv_path is not None:
+        args.output_csv_path = args.output_csv_path.resolve()
     os.chdir(Path(__file__).parent.parent)
     seed_everything(seed=42)
     main(
         image_only=args.image_only,
         save_model=args.save_model,
         loss_csv_path=args.loss_csv_path,
+        output_csv_path=args.output_csv_path,
     )
