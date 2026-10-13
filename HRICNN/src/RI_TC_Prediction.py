@@ -570,9 +570,15 @@ def select_hyperparameters(
     max_epochs = max(epoch_candidates)
     loss_csv_path = Path(loss_csv_path or "hyperparameter_validation_losses.csv")
     loss_csv_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(columns=["Model", "Epoch", "Batch", "Loss"]).to_csv(
-        loss_csv_path, index=False
+    stage_one_csv_path = loss_csv_path.with_name(
+        f"{loss_csv_path.stem}_stage1.csv"
     )
+    stage_two_csv_path = loss_csv_path.with_name(
+        f"{loss_csv_path.stem}_stage2.csv"
+    )
+    csv_columns = ["Model", "Epoch", "Batch", "Loss"]
+    pd.DataFrame(columns=csv_columns).to_csv(stage_one_csv_path, index=False)
+    pd.DataFrame(columns=csv_columns).to_csv(stage_two_csv_path, index=False)
     train_img = np.concatenate((X_train_img, X_validation_img), axis=0)
     train_ships = np.concatenate((X_train_ships, X_validation_ships), axis=0)
     train_labels = np.concatenate((y_train, y_validation), axis=0)
@@ -663,19 +669,20 @@ def select_hyperparameters(
                 batch_size,
                 stage_one_epochs,
             )
+            pd.DataFrame(
+                [
+                    {
+                        "Model": model_class.__name__,
+                        "Epoch": epoch,
+                        "Batch": batch_size,
+                        "Loss": mean_losses[epoch - 1],
+                    }
+                    for epoch in range(1, stage_one_epochs + 1)
+                ]
+            ).to_csv(stage_one_csv_path, mode="a", header=False, index=False)
             for epoch in stage_one_candidates:
                 validation_loss = mean_losses[epoch - 1]
                 scores[model_index, batch_index, epoch - 1] = validation_loss
-                pd.DataFrame(
-                    [
-                        {
-                            "Model": model_class.__name__,
-                            "Epoch": epoch,
-                            "Batch": batch_size,
-                            "Loss": validation_loss,
-                        }
-                    ]
-                ).to_csv(loss_csv_path, mode="a", header=False, index=False)
             print(
                 f"Validation architecture {model_class.__name__}, "
                 f"batch size {batch_size} complete; "
@@ -712,24 +719,26 @@ def select_hyperparameters(
             batch_size,
             max_epochs,
         )
+        pd.DataFrame(
+            [
+                {
+                    "Model": model_class.__name__,
+                    "Epoch": epoch,
+                    "Batch": batch_size,
+                    "Loss": mean_losses[epoch - 1],
+                }
+                for epoch in range(1, max_epochs + 1)
+            ]
+        ).to_csv(stage_two_csv_path, mode="a", header=False, index=False)
         for epoch in stage_two_candidates:
             validation_loss = mean_losses[epoch - 1]
             scores[model_index, batch_index, epoch - 1] = validation_loss
-            pd.DataFrame(
-                [
-                    {
-                        "Model": model_class.__name__,
-                        "Epoch": epoch,
-                        "Batch": batch_size,
-                        "Loss": validation_loss,
-                    }
-                ]
-            ).to_csv(loss_csv_path, mode="a", header=False, index=False)
         print(
             f"Stage two complete: {model_class.__name__}; " f"batch size={batch_size}"
         )
 
-    print(f"Validation losses saved to {loss_csv_path}")
+    print(f"Stage one validation losses saved to {stage_one_csv_path}")
+    print(f"Stage two validation losses saved to {stage_two_csv_path}")
 
     best_model_index, best_batch_index, best_epoch_index = np.unravel_index(
         np.nanargmin(scores), scores.shape

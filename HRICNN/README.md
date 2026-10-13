@@ -55,8 +55,13 @@ each architecture continues through the remaining epoch candidates. Each year
 contributes equally to the mean validation loss. The selected architecture is
 retrained on all pooled training and validation data, then evaluated on the
 untouched test set.
-Validation results are written to the path supplied with `--loss_csv_path`,
-with one row per candidate and columns `Model`, `Epoch`, `Batch`, and `Loss`.
+Validation results are written to two files derived from the path supplied with
+`--loss_csv_path`. For example, `results/losses.csv` produces
+`results/losses_stage1.csv` and `results/losses_stage2.csv`. The stage 1 file
+contains every architecture/batch loss through epoch 10; the stage 2 file
+contains every epoch from the complete retraining run for each selected
+architecture-specific batch size. Both files use columns `Model`, `Epoch`,
+`Batch`, and `Loss`.
 Pass `--output-csv-path` to save the valid test observations together with a
 `Prediction` column containing the selected model's test-set predictions. Rows
 whose IMERG image is missing or has the wrong shape are omitted so that every
