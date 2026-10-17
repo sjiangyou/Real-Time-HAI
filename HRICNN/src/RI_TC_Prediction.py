@@ -22,6 +22,7 @@ EPOCH_CANDIDATES = range(1, 101)
 BATCH_SIZE_CANDIDATES = (1, 2, 4, 8, 16)
 LEARNING_RATE = 0.001
 VALIDATION_SPLIT = 0.1
+CLASSIFICATION_BOUNDARY = 0.21
 
 
 class BinaryFocalCrossEntropy(nn.Module):
@@ -424,6 +425,70 @@ def binary_accuracy(preds, targets):
     return (predictions == targets).float().mean().item()
 
 
+def calculate_overall_score(predictions, labels, boundary=CLASSIFICATION_BOUNDARY):
+    """Calculate OS = BSS + POD - FAR + PSS for binary RI predictions.
+
+    The climatological reference assigns each of the two categories a
+    probability of 1 / 2. Probability-based Brier metrics use the model's
+    continuous predictions; threshold-based metrics use ``boundary``.
+    """
+    predictions = np.asarray(predictions, dtype=np.float64).reshape(-1)
+    labels = np.asarray(labels, dtype=np.float64).reshape(-1)
+    if predictions.shape != labels.shape or predictions.size == 0:
+        raise ValueError("Predictions and labels must be non-empty and aligned.")
+    if not 0 <= boundary <= 1:
+        raise ValueError("The classification boundary must be between 0 and 1.")
+    if np.any((predictions < 0) | (predictions > 1)):
+        raise ValueError("Predictions must be probabilities between 0 and 1.")
+    if np.any((labels != 0) & (labels != 1)):
+        raise ValueError("Labels must be binary values.")
+
+    brier_score = np.mean((labels - predictions) ** 2)
+    reference_probability = 1.0 / 2.0
+    reference_brier_score = np.mean((labels - reference_probability) ** 2)
+    if reference_brier_score == 0:
+        raise ValueError("The uniform climatological Brier Score is zero.")
+    brier_skill_score = 1.0 - brier_score / reference_brier_score
+
+    predicted_classes = predictions >= boundary
+    observed_positive = labels == 1
+    observed_negative = labels == 0
+    true_positives = np.sum(observed_positive & predicted_classes)
+    false_negatives = np.sum(observed_positive & ~predicted_classes)
+    false_positives = np.sum(observed_negative & predicted_classes)
+    true_negatives = np.sum(observed_negative & ~predicted_classes)
+
+    pod_denominator = true_positives + false_negatives
+    predicted_positive_count = false_positives + true_positives
+    pss_denominator = (true_positives + false_negatives) * (
+        false_positives + true_negatives
+    )
+    # A model can predict no RI cases during early epochs. In that case FAR's
+    # denominator is zero, but there are also no false alarms, so use FAR=0.
+    # If a fold contains only one observed category, PSS cannot measure
+    # discrimination and is assigned zero for that fold.
+    pod = true_positives / pod_denominator if pod_denominator > 0 else 0.0
+    far = (
+        false_positives / predicted_positive_count
+        if predicted_positive_count > 0
+        else 0.0
+    )
+    pss = (
+        (true_positives * true_negatives - false_positives * false_negatives)
+        / pss_denominator
+        if pss_denominator > 0
+        else 0.0
+    )
+    overall_score = brier_skill_score + pod - far + pss
+    return {
+        "BSS": brier_skill_score,
+        "POD": pod,
+        "FAR": far,
+        "PSS": pss,
+        "OS": overall_score,
+    }
+
+
 def evaluate_model(model, data_loader, criterion):
     model.eval()
 
@@ -548,8 +613,9 @@ def select_hyperparameters(
 
     The prepared training and validation splits are pooled, while the test
     split is never passed to this function. Each distinct year is held out in
-    turn. Year-level losses are averaged equally, so years with more samples
-    do not dominate selection. All architecture/batch combinations are
+    turn. Year-level metrics are averaged equally, so years with more samples
+    do not dominate selection. Hyperparameters are selected by maximizing the
+    overall score (OS = BSS + POD - FAR + PSS). All architecture/batch combinations are
     evaluated through epoch 10 first; only the best batch size for each
     architecture is evaluated beyond epoch 10.
     """
@@ -570,13 +636,19 @@ def select_hyperparameters(
     max_epochs = max(epoch_candidates)
     loss_csv_path = Path(loss_csv_path or "hyperparameter_validation_losses.csv")
     loss_csv_path.parent.mkdir(parents=True, exist_ok=True)
-    stage_one_csv_path = loss_csv_path.with_name(
-        f"{loss_csv_path.stem}_stage1.csv"
-    )
-    stage_two_csv_path = loss_csv_path.with_name(
-        f"{loss_csv_path.stem}_stage2.csv"
-    )
-    csv_columns = ["Model", "Epoch", "Batch", "Loss"]
+    stage_one_csv_path = loss_csv_path.with_name(f"{loss_csv_path.stem}_stage1.csv")
+    stage_two_csv_path = loss_csv_path.with_name(f"{loss_csv_path.stem}_stage2.csv")
+    csv_columns = [
+        "Model",
+        "Epoch",
+        "Batch",
+        "Loss",
+        "BSS",
+        "POD",
+        "FAR",
+        "PSS",
+        "OS",
+    ]
     pd.DataFrame(columns=csv_columns).to_csv(stage_one_csv_path, index=False)
     pd.DataFrame(columns=csv_columns).to_csv(stage_two_csv_path, index=False)
     train_img = np.concatenate((X_train_img, X_validation_img), axis=0)
@@ -601,8 +673,11 @@ def select_hyperparameters(
     def evaluate_configuration(
         model_index, model_class, batch_index, batch_size, epochs_to_run
     ):
-        """Train one architecture/batch configuration across all year folds."""
-        fold_losses = np.full((len(unique_years), max_epochs), np.nan)
+        """Train one configuration and return equally weighted yearly metrics."""
+        fold_metrics = {
+            name: np.full((len(unique_years), max_epochs), np.nan)
+            for name in ("Loss", "BSS", "POD", "FAR", "PSS", "OS")
+        }
         for fold_index, held_out_year in enumerate(unique_years):
             train_indices = np.flatnonzero(years != held_out_year)
             validation_indices = np.flatnonzero(years == held_out_year)
@@ -631,15 +706,19 @@ def select_hyperparameters(
             optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
             for epoch in range(epochs_to_run):
                 _train_epoch(model, train_loader, criterion, optimizer)
-                fold_losses[fold_index, epoch] = evaluate_model(
+                validation_loss, _, _, predictions, labels = evaluate_model(
                     model, validation_loader, criterion
-                )[0]
+                )
+                metrics = calculate_overall_score(predictions, labels)
+                fold_metrics["Loss"][fold_index, epoch] = validation_loss
+                for name, value in metrics.items():
+                    fold_metrics[name][fold_index, epoch] = value
             print(
                 f"{model_class.__name__} | batch size={batch_size} | "
                 f"held-out year={held_out_year} complete",
                 flush=True,
             )
-        return np.mean(fold_losses, axis=0)
+        return {name: np.mean(values, axis=0) for name, values in fold_metrics.items()}
 
     stage_one_epochs = min(10, max_epochs)
     stage_one_candidates = tuple(
@@ -650,11 +729,11 @@ def select_hyperparameters(
     )
 
     # Stage one evaluates every architecture/batch pair only through epoch 10.
-    # This identifies one promising batch size for each architecture.
+    # This identifies one promising batch size for each architecture by OS.
     stage_one_best_batches = {}
     for model_index, model_class in enumerate(model_classes):
         best_batch_index = None
-        best_stage_one_loss = np.inf
+        best_stage_one_score = -np.inf
         for batch_index, batch_size in enumerate(batch_size_candidates):
             print(
                 f"Starting hyperparameter test: architecture={model_class.__name__}, "
@@ -662,7 +741,7 @@ def select_hyperparameters(
                 f"years={len(unique_years)}",
                 flush=True,
             )
-            mean_losses = evaluate_configuration(
+            mean_metrics = evaluate_configuration(
                 model_index,
                 model_class,
                 batch_index,
@@ -675,22 +754,27 @@ def select_hyperparameters(
                         "Model": model_class.__name__,
                         "Epoch": epoch,
                         "Batch": batch_size,
-                        "Loss": mean_losses[epoch - 1],
+                        "Loss": mean_metrics["Loss"][epoch - 1],
+                        "BSS": mean_metrics["BSS"][epoch - 1],
+                        "POD": mean_metrics["POD"][epoch - 1],
+                        "FAR": mean_metrics["FAR"][epoch - 1],
+                        "PSS": mean_metrics["PSS"][epoch - 1],
+                        "OS": mean_metrics["OS"][epoch - 1],
                     }
                     for epoch in range(1, stage_one_epochs + 1)
                 ]
             ).to_csv(stage_one_csv_path, mode="a", header=False, index=False)
             for epoch in stage_one_candidates:
-                validation_loss = mean_losses[epoch - 1]
-                scores[model_index, batch_index, epoch - 1] = validation_loss
+                validation_score = mean_metrics["OS"][epoch - 1]
+                scores[model_index, batch_index, epoch - 1] = validation_score
             print(
                 f"Validation architecture {model_class.__name__}, "
                 f"batch size {batch_size} complete; "
-                f"stage-one loss={np.min(mean_losses[:stage_one_epochs]):.6f}"
+                f"stage-one best OS={np.max(mean_metrics['OS'][:stage_one_epochs]):.6f}"
             )
-            stage_one_loss = np.min(mean_losses[:stage_one_epochs])
-            if stage_one_loss < best_stage_one_loss:
-                best_stage_one_loss = stage_one_loss
+            stage_one_score = np.max(mean_metrics["OS"][:stage_one_epochs])
+            if stage_one_score > best_stage_one_score:
+                best_stage_one_score = stage_one_score
                 best_batch_index = batch_index
         stage_one_best_batches[model_index] = best_batch_index
         print(
@@ -700,7 +784,7 @@ def select_hyperparameters(
 
     # Stage two searches epoch counts only for the best batch size per
     # architecture. The selected configurations are retrained from epoch one
-    # so their later-epoch losses remain directly comparable.
+    # so their later-epoch OS values remain directly comparable.
     for model_index, model_class in enumerate(model_classes):
         batch_index = stage_one_best_batches[model_index]
         batch_size = batch_size_candidates[batch_index]
@@ -712,7 +796,7 @@ def select_hyperparameters(
             f"years={len(unique_years)}",
             flush=True,
         )
-        mean_losses = evaluate_configuration(
+        mean_metrics = evaluate_configuration(
             model_index,
             model_class,
             batch_index,
@@ -725,14 +809,19 @@ def select_hyperparameters(
                     "Model": model_class.__name__,
                     "Epoch": epoch,
                     "Batch": batch_size,
-                    "Loss": mean_losses[epoch - 1],
+                    "Loss": mean_metrics["Loss"][epoch - 1],
+                    "BSS": mean_metrics["BSS"][epoch - 1],
+                    "POD": mean_metrics["POD"][epoch - 1],
+                    "FAR": mean_metrics["FAR"][epoch - 1],
+                    "PSS": mean_metrics["PSS"][epoch - 1],
+                    "OS": mean_metrics["OS"][epoch - 1],
                 }
                 for epoch in range(1, max_epochs + 1)
             ]
         ).to_csv(stage_two_csv_path, mode="a", header=False, index=False)
         for epoch in stage_two_candidates:
-            validation_loss = mean_losses[epoch - 1]
-            scores[model_index, batch_index, epoch - 1] = validation_loss
+            validation_score = mean_metrics["OS"][epoch - 1]
+            scores[model_index, batch_index, epoch - 1] = validation_score
         print(
             f"Stage two complete: {model_class.__name__}; " f"batch size={batch_size}"
         )
@@ -749,7 +838,7 @@ def select_hyperparameters(
     print(
         f"Selected architecture: {best_model_class.__name__}; "
         f"epochs: {best_epochs}; batch size: {best_batch_size}; "
-        f"validation focal loss: "
+        f"validation OS: "
         f"{scores[best_model_index, best_batch_index, best_epoch_index]:.6f}"
     )
     return best_model_class, best_epochs, best_batch_size
@@ -829,9 +918,6 @@ def run_models(
     print(f"Test MSE: {test_mse:.6f}")
 
     preds = np.average(preds, axis=1)
-
-    print("Test predictions:")
-    print(preds)
 
     return new_model1, preds
 
