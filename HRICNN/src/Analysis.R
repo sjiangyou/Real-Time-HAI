@@ -1,0 +1,195 @@
+# Calculate probability-based metrics for HRICNN test predictions.
+#
+# Run from the repository root with:
+#   Rscript HRICNN/src/Analysis.R
+#
+# The script intentionally keeps each metric in its own function. To add a
+# metric, define a function that accepts observed labels and predicted
+# probabilities, then add its result to calculate_model_metrics().
+
+library(here)
+
+# Classification boundary for future threshold-based metrics. This does not
+# affect the probability-based Brier Score or Brier Skill Score.
+classification_boundary <- 0.21
+
+
+classify_predictions <- function(predicted, boundary = classification_boundary) {
+    if (length(boundary) != 1 || is.na(boundary) ||
+        boundary < 0 || boundary > 1) {
+        stop("classification boundary must be a single value between 0 and 1.")
+    }
+
+    if (anyNA(predicted) || any(predicted < 0 | predicted > 1)) {
+        stop("predicted probabilities must be between 0 and 1.")
+    }
+
+    ifelse(predicted >= boundary, 1, 0)
+}
+
+calculate_POD <- function(observed, predicted) {
+    true_positives <- sum(observed == 1 & predicted == 1)
+    false_negatives <- sum(observed == 1 & predicted == 0)
+
+    if (true_positives + false_negatives == 0) {
+        return(NA)
+    }
+
+    true_positives / (true_positives + false_negatives)
+}
+
+calculate_FAR <- function(observed, predicted) {
+    false_positives <- sum(observed == 0 & predicted == 1)
+    true_positives <- sum(observed == 1 & predicted == 1)
+
+    if (false_positives + true_positives == 0) {
+        return(NA)
+    }
+
+    false_positives / (false_positives + true_positives)
+}
+
+calculate_PSS <- function(observed, predicted) {
+    true_positives <- sum(observed == 1 & predicted == 1)
+    false_positives <- sum(observed == 0 & predicted == 1)
+    false_negatives <- sum(observed == 1 & predicted == 0)
+    true_negatives <- sum(observed == 0 & predicted == 0)
+
+    numerator <- (true_positives * true_negatives) - (false_positives * false_negatives)
+    denominator <- (true_positives + false_negatives) * (false_positives + true_negatives)
+
+    if (denominator == 0) {
+        return(NA)
+    }
+
+    numerator / denominator
+}
+
+calculate_brier_score <- function(observed, predicted) {
+    mean((observed - predicted)^2)
+}
+
+
+calculate_climatological_brier_score <- function(observed) {
+    climatological_probability <- 0.5
+    mean((observed - climatological_probability)^2)
+}
+
+
+calculate_brier_skill_score <- function(observed, predicted) {
+    brier_score <- calculate_brier_score(observed, predicted)
+    climatological_brier_score <- calculate_climatological_brier_score(observed)
+
+    if (climatological_brier_score == 0) {
+        stop(
+            "The climatological Brier Score is zero; ",
+            "the Brier Skill Score is undefined."
+        )
+    }
+
+    1 - (brier_score / climatological_brier_score)
+}
+
+
+calculate_model_metrics <- function(data) {
+    predicted_classes <- classify_predictions(data$Prediction)
+
+    list(
+        brier_score = calculate_brier_score(data$RI, data$Prediction),
+        brier_skill_score = calculate_brier_skill_score(
+            data$RI,
+            data$Prediction
+        ),
+        pod = calculate_POD(data$RI, predicted_classes),
+        far = calculate_FAR(data$RI, predicted_classes),
+        pss = calculate_PSS(data$RI, predicted_classes)
+    )
+}
+
+
+validate_prediction_data <- function(data, file_name) {
+    required_columns <- c("GIS_ID", "RI", "Prediction")
+    missing_columns <- setdiff(required_columns, names(data))
+
+    if (length(missing_columns) > 0) {
+        stop(
+            file_name,
+            " is missing required column(s): ",
+            paste(missing_columns, collapse = ", ")
+        )
+    }
+
+    if (anyNA(data[, required_columns])) {
+        stop(file_name, " contains missing values in a required column.")
+    }
+
+    if (!all(data$RI %in% c(0, 1))) {
+        stop(file_name, " contains RI values other than 0 and 1.")
+    }
+
+    if (!is.numeric(data$Prediction) ||
+        any(data$Prediction < 0 | data$Prediction > 1)) {
+        stop(
+            file_name,
+            " contains predictions outside the probability range [0, 1]."
+        )
+    }
+}
+
+
+validate_matching_observations <- function(first_data, second_data) {
+    if (nrow(first_data) != nrow(second_data)) {
+        stop("The model output files contain different numbers of observations.")
+    }
+
+    if (!identical(first_data$GIS_ID, second_data$GIS_ID) ||
+        !identical(first_data$RI, second_data$RI)) {
+        stop("The model output files do not contain matching observations.")
+    }
+}
+
+
+print_model_metrics <- function(model_name, metrics) {
+    cat(model_name, "\n", sep = "")
+    cat(sprintf("  Brier Score:       %.6f\n", metrics$brier_score))
+    cat(sprintf("  Brier Skill Score: %.6f\n", metrics$brier_skill_score))
+    cat(sprintf("  POD:               %.6f\n", metrics$pod))
+    cat(sprintf("  FAR:               %.6f\n", metrics$far))
+    cat(sprintf("  PSS:               %.6f\n", metrics$pss))
+}
+
+
+results_directory <- here::here("HRICNN", "Results")
+rain_output_path <- file.path(results_directory, "rain_model_output.csv")
+model_output_path <- file.path(results_directory, "model_output.csv")
+
+rain_data <- read.csv(rain_output_path, stringsAsFactors = FALSE)
+model_data <- read.csv(model_output_path, stringsAsFactors = FALSE)
+
+validate_prediction_data(rain_data, "rain_model_output.csv")
+validate_prediction_data(model_data, "model_output.csv")
+validate_matching_observations(rain_data, model_data)
+
+climatological_probability <- 0.5
+climatological_brier_score <- calculate_climatological_brier_score(
+    rain_data$RI
+)
+
+cat("HRICNN prediction metrics\n")
+cat("=========================\n")
+cat(sprintf("Observations: %d\n", nrow(rain_data)))
+cat(sprintf("RI prevalence: %.6f\n", climatological_probability))
+cat(sprintf(
+    "Climatological Brier Score: %.6f\n\n",
+    climatological_brier_score
+))
+
+print_model_metrics(
+    "Rainfall + SHIPS model",
+    calculate_model_metrics(rain_data)
+)
+cat("\n")
+print_model_metrics(
+    "Image-only model",
+    calculate_model_metrics(model_data)
+)
