@@ -92,14 +92,11 @@ def _normalise_shap_values(values, use_ships):
 
 def _print_summary(image_shap, ships_shap):
     """Print the aggregate SHAP report used by ``SHAP_VALUES.txt``."""
-    summaries = [
-        ("Image", image_shap.reshape(len(image_shap), -1).sum(axis=1))
-    ]
+    summaries = [("Image", image_shap.reshape(len(image_shap), -1).sum(axis=1))]
     if ships_shap is not None:
         ships_shap = ships_shap.reshape(len(ships_shap), -1)
         summaries.extend(
-            (name, ships_shap[:, index])
-            for index, name in enumerate(SHIPS_NAMES)
+            (name, ships_shap[:, index]) for index, name in enumerate(SHIPS_NAMES)
         )
 
     for name, values in summaries:

@@ -162,13 +162,17 @@ print_model_metrics <- function(model_name, metrics) {
 results_directory <- here::here("HRICNN", "Results")
 rain_output_path <- file.path(results_directory, "rain_model_output.csv")
 model_output_path <- file.path(results_directory, "model_output.csv")
+ships_output_path <- file.path(results_directory, "SHIPS_predictions.csv")
 
 rain_data <- read.csv(rain_output_path, stringsAsFactors = FALSE)
 model_data <- read.csv(model_output_path, stringsAsFactors = FALSE)
+ships_data <- read.csv(ships_output_path, stringsAsFactors = FALSE)
 
 validate_prediction_data(rain_data, "rain_model_output.csv")
 validate_prediction_data(model_data, "model_output.csv")
+validate_prediction_data(ships_data, "SHIPS_predictions.csv")
 validate_matching_observations(rain_data, model_data)
+validate_matching_observations(rain_data, ships_data)
 
 climatological_probability <- 0.5
 climatological_brier_score <- calculate_climatological_brier_score(
@@ -192,4 +196,9 @@ cat("\n")
 print_model_metrics(
     "Image-only model",
     calculate_model_metrics(model_data)
+)
+cat("\n")
+print_model_metrics(
+    "SHIPS-only model",
+    calculate_model_metrics(ships_data)
 )

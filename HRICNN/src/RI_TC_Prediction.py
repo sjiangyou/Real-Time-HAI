@@ -78,12 +78,6 @@ def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=
         test_ships,
         test_label,
     ) = data
-    (
-        validation_img,
-        validation_ships,
-        validation_label,
-        validation_year,
-    ) = load_validation_data(include_year=True)
     models = model_setup(
         train_img,
         train_ships,
@@ -100,10 +94,6 @@ def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=
         train_ships,
         train_label,
         train_year,
-        validation_img,
-        validation_ships,
-        validation_label,
-        validation_year,
         test_img,
         test_ships,
         test_label,
@@ -250,8 +240,8 @@ def _prepare_dataframe(path):
 
 def load_data(include_year=False, return_test_dataframe=False):
     """Load train/test arrays and optionally the prediction-aligned test dataframe."""
-    train = _load_arrays(_prepare_dataframe("IMERG/Model_Data/ATL_train.csv"))
-    test_dataframe = _prepare_dataframe("IMERG/Model_Data/ATL_test.csv")
+    train = _load_arrays(_prepare_dataframe("IMERG/ATL_train.csv"))
+    test_dataframe = _prepare_dataframe("IMERG/ATL_test.csv")
     if return_test_dataframe:
         test, valid_indices = _load_arrays(
             test_dataframe,
@@ -266,14 +256,6 @@ def load_data(include_year=False, return_test_dataframe=False):
     if return_test_dataframe:
         return data, test_dataframe
     return data
-
-
-def load_validation_data(include_year=False):
-    """Load the explicit validation split using the shared dataframe loader."""
-    validation = _load_arrays(_prepare_dataframe("IMERG/Model_Data/ATL_val.csv"))
-    if include_year:
-        return validation
-    return validation[:3]
 
 
 # ---------------------------------------------------------------------------
@@ -598,10 +580,6 @@ def select_hyperparameters(
     X_train_ships,
     y_train,
     years_train,
-    X_validation_img=None,
-    X_validation_ships=None,
-    y_validation=None,
-    years_validation=None,
     epoch_candidates=EPOCH_CANDIDATES,
     batch_size_candidates=BATCH_SIZE_CANDIDATES,
     model_classes=(Model1, Model2, Model3),
@@ -611,22 +589,16 @@ def select_hyperparameters(
 ):
     """Select hyperparameters with staged leave-one-year-out cross-validation.
 
-    The prepared training and validation splits are pooled, while the test
-    split is never passed to this function. Each distinct year is held out in
+    Only the prepared training split is used for selection; the test split is
+    never passed to this function. Each distinct training year is held out in
     turn. Year-level metrics are averaged equally, so years with more samples
     do not dominate selection. Hyperparameters are selected by maximizing the
-    overall score (OS = BSS + POD - FAR + PSS). All architecture/batch combinations are
-    evaluated through epoch 10 first; only the best batch size for each
-    architecture is evaluated beyond epoch 10.
+    overall score (OS = BSS + POD - FAR + PSS). All architecture/batch
+    combinations are evaluated through epoch 10 first; only the best batch
+    size for each architecture is evaluated beyond epoch 10.
     """
-    if (
-        X_validation_img is None
-        or X_validation_ships is None
-        or y_validation is None
-        or years_train is None
-        or years_validation is None
-    ):
-        raise ValueError("Training and validation arrays with years are required.")
+    if years_train is None:
+        raise ValueError("Training arrays with years are required.")
     epoch_candidates = tuple(sorted(set(int(epoch) for epoch in epoch_candidates)))
     batch_size_candidates = tuple(
         sorted(set(int(size) for size in batch_size_candidates))
@@ -651,10 +623,10 @@ def select_hyperparameters(
     ]
     pd.DataFrame(columns=csv_columns).to_csv(stage_one_csv_path, index=False)
     pd.DataFrame(columns=csv_columns).to_csv(stage_two_csv_path, index=False)
-    train_img = np.concatenate((X_train_img, X_validation_img), axis=0)
-    train_ships = np.concatenate((X_train_ships, X_validation_ships), axis=0)
-    train_labels = np.concatenate((y_train, y_validation), axis=0)
-    years = np.concatenate((years_train, years_validation), axis=0)
+    train_img = X_train_img
+    train_ships = X_train_ships
+    train_labels = y_train
+    years = years_train
     unique_years = np.unique(years)
     if unique_years.size < 2:
         raise ValueError("At least two distinct years are required for validation.")
@@ -857,10 +829,6 @@ def run_models(
     X_train_ships,
     y_train,
     years_train,
-    X_validation_img,
-    X_validation_ships,
-    y_validation,
-    years_validation,
     X_test_img,
     X_test_ships,
     y_test,
@@ -872,22 +840,18 @@ def run_models(
         X_train_ships,
         y_train,
         years_train,
-        X_validation_img,
-        X_validation_ships,
-        y_validation,
-        years_validation,
         use_ships=use_ships,
         loss_csv_path=loss_csv_path,
     )
 
-    # Selection models are discarded; fit the winning architecture on all
-    # pooled train/validation samples before evaluating on the untouched test set.
+    # Selection models are discarded; fit the winning architecture on the
+    # training split before evaluating on the untouched test set.
     new_model1 = best_model_class(use_ships=use_ships).to(DEVICE)
     new_model1 = train_model(
         new_model1,
-        np.concatenate((X_train_img, X_validation_img), axis=0),
-        np.concatenate((X_train_ships, X_validation_ships), axis=0),
-        np.concatenate((y_train, y_validation), axis=0),
+        X_train_img,
+        X_train_ships,
+        y_train,
         epochs=best_epochs,
         batch_size=best_batch_size,
         use_ships=use_ships,

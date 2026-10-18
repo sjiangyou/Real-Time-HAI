@@ -1,122 +1,175 @@
 # Hurricane Rapid Intensification CNN (HRICNN)
 
-This directory contains the PyTorch implementation of the Hurricane Rapid
-Intensification Convolutional Neural Network (HRICNN). The model predicts
+This directory contains the research code for the Hurricane Rapid
+Intensification Convolutional Neural Network (HRICNN). The CNN predicts
 whether a tropical cyclone will rapidly intensify (`RI = 1`) from a 61 × 61
-IMERG rainfall image and, by default, ten SHIPS environmental variables.
+IMERG rainfall image. The default model also uses ten SHIPS environmental
+variables. The directory additionally contains an image-only CNN and a
+SHIPS-only linear discriminant analysis baseline.
 
-## Data preparation
+## Current workflow
 
-Run the experimentation script from the repository root. First create the
-shared Python and R environments with `source Environment_Setup.sh`; this
-restores the R packages recorded in the root `renv.lock`. Before training,
-make sure the following inputs are available:
-
-- `BRTK_2000to2019_IMERG_SHIPS-RII.csv`
-- `IMERG_CSV/<GIS_ID>.csv` for each storm observation
-
-Run the R preprocessing script to remove incomplete records, calculate the RI
-label, and create the model splits:
+Run commands from the repository root. Create the shared Python and R
+environments first with:
 
 ```bash
-Rscript HRICNN/src/Model_Prep.R
+source Environment_Setup.sh
 ```
 
-The script writes basin-specific files to `IMERG/Model_Data/`. The training
-split contains observations before 2016, the validation split contains 2016–
-2017 observations, and the test split contains observations from 2016 onward.
-The prepared training and validation splits are pooled for hyperparameter
-selection; the test split remains untouched.
-
-The Python loader currently trains on the Atlantic files:
-`ATL_train.csv`, `ATL_val.csv`, and `ATL_test.csv`.
-
-The commands below are also collected in `HRICNN/Experiment.sh`, which runs
-both the SHIPS-enabled and image-only experiments:
+The experiment script runs the complete intended workflow:
 
 ```bash
 ./HRICNN/Experiment.sh
 ```
 
-## Train and evaluate
+It prepares the data, trains the two CNN input modes, fits the SHIPS-only
+baseline, generates SHAP values and plots, and prints prediction metrics.
 
-From the repository root, run:
+## Data preparation
+
+Before preprocessing, make sure these inputs are available:
+
+- `HRICNN/BRTK_2000to2019_IMERG_SHIPS-RII.csv`
+- `HRICNN/IMERG_CSV/<GIS_ID>.csv` for each storm observation
+
+Create the RI labels and basin-specific data files with:
+
+```bash
+Rscript HRICNN/src/Model_Prep.R
+```
+
+`Model_Prep.R` removes incomplete records, defines rapid intensification as a
+24-hour maximum-wind increase of at least 30 kt, adds the storm year, and
+writes the following files under `HRICNN/IMERG/`:
+
+- `<BASIN>_train.csv`: observations before 2016
+- `<BASIN>_test.csv`: observations from 2016 onward
+- `<BASIN>_train_resample.csv`: class-balanced resampling of the training data
+
+There is currently no separate validation split. Hyperparameter selection
+uses leave-one-year-out cross-validation within the training split, and the
+test split remains untouched until final evaluation. The Python CNN code
+currently loads `HRICNN/IMERG/ATL_train.csv` and `HRICNN/IMERG/ATL_test.csv`.
+
+## CNN training and evaluation
+
+Run the default rainfall-plus-SHIPS CNN with:
 
 ```bash
 python HRICNN/src/RI_TC_Prediction.py
 ```
 
-Training is deterministic with seed 42. The script evaluates three model
-architectures, batch sizes 1, 2, 4, 8, and 16, and 1–100 epochs using focal
-loss. Hyperparameters are selected with staged leave-one-year-out cross-validation
-over the pooled training and validation splits. All architecture/batch
-combinations are evaluated through epoch 10, then only the best batch size for
-each architecture continues through the remaining epoch candidates. Each year
-contributes equally to the mean validation loss. The selected architecture is
-retrained on all pooled training and validation data, then evaluated on the
-untouched test set.
-Validation results are written to two files derived from the path supplied with
-`--loss_csv_path`. For example, `results/losses.csv` produces
-`results/losses_stage1.csv` and `results/losses_stage2.csv`. The stage 1 file
-contains every architecture/batch loss through epoch 10; the stage 2 file
-contains every epoch from the complete retraining run for each selected
-architecture-specific batch size. Both files use columns `Model`, `Epoch`,
-`Batch`, and `Loss`.
-Pass `--output-csv-path` to save the valid test observations together with a
-`Prediction` column containing the selected model's test-set predictions. Rows
-whose IMERG image is missing or has the wrong shape are omitted so that every
-saved prediction remains aligned with its input row.
+Training is deterministic with seed 42. Three architectures, batch sizes 1,
+2, 4, 8, and 16, and epoch counts from 1 through 100 are evaluated using
+binary focal loss. Selection is staged: every architecture/batch-size
+combination is evaluated through epoch 10, then the best batch size for each
+architecture is evaluated through the remaining epoch candidates.
 
-To train using only the satellite image, without SHIPS variables, use:
+The selection metric is:
+
+```text
+OS = BSS + POD - FAR + PSS
+```
+
+BSS uses a uniform binary climatological probability of 0.5. POD, FAR, and
+PSS use the 0.21 classification boundary. Each held-out year contributes
+equally to the cross-validation mean. The selected architecture is retrained
+on the complete training split and evaluated on the untouched test split.
+
+Validation results are written to stage-specific CSV files. For example,
+`--loss-csv-path results/losses.csv` creates:
+
+- `results/losses_stage1.csv`
+- `results/losses_stage2.csv`
+
+The files contain `Model`, `Epoch`, `Batch`, `Loss`, `BSS`, `POD`, `FAR`,
+`PSS`, and `OS` columns. Pass `--output-csv-path` to save valid test rows and
+their predictions, and `--save-model` to save a checkpoint containing the
+selected architecture and input mode.
+
+To train the image-only CNN, use:
 
 ```bash
 python HRICNN/src/RI_TC_Prediction.py \
-  --image-only \
-  --loss_csv_path HRICNN/Results/image_hyperparameter_validation_losses.csv
+    --image-only \
+    --loss-csv-path HRICNN/Results/image_hyperparameter_validation_losses.csv
 ```
 
-Save the selected model checkpoint with `--save-model`:
+The experiment script saves the rainfall-plus-SHIPS model as
+`HRICNN/Models/Rain_Model.pt` and the image-only model as
+`HRICNN/Models/Model.pt`. Their test predictions are saved as
+`rain_model_output.csv` and `model_output.csv`, respectively.
+
+## SHIPS-only baseline
+
+Fit the SHIPS-only linear discriminant analysis baseline with:
 
 ```bash
-python HRICNN/src/RI_TC_Prediction.py \
-  --save-model HRICNN/Models/ri_model.pt \
-  --loss-csv-path HRICNN/Results/ri_hyperparameter_validation_losses.csv \
-  --output-csv-path HRICNN/Results/ri_test_predictions.csv
+Rscript HRICNN/src/SHIPS.R
 ```
 
-The checkpoint includes the selected architecture and whether SHIPS inputs
-were used, so it can be loaded by the SHAP script without separately
-specifying the model class.
+The script uses `HRICNN/IMERG/ATL_train_resample.csv` and
+`HRICNN/IMERG/ATL_test.csv`, then writes
+`HRICNN/Results/SHIPS_predictions.csv`.
+
+## Prediction analysis
+
+Calculate metrics for the rainfall-plus-SHIPS CNN, image-only CNN, and
+SHIPS-only baseline with:
+
+```bash
+Rscript HRICNN/src/Analysis.R
+```
+
+The script validates that all three output files contain matching observations
+and reports Brier Score, Brier Skill Score, Probability of Detection (POD),
+False Alarm Ratio (FAR), and Peirce Skill Score (PSS). Brier-based metrics use
+prediction probabilities directly; threshold-based metrics use the
+configurable `classification_boundary` in `Analysis.R`, currently `0.21`.
+
+## Hyperparameter plots
+
+Generate plots from the saved staged validation CSV files with:
+
+```bash
+Rscript HRICNN/src/Plots.R
+```
+
+The script writes plots to `HRICNN/Results/Plots/`. Stage 1 plots summarize
+the maximum OS for each batch size; stage 2 plots show OS by epoch and
+highlight the best epoch. The current plot script distinguishes input modes
+by filename prefix, so its expected prefixes should be kept consistent with
+the loss-file paths passed to `RI_TC_Prediction.py`.
 
 ## SHAP analysis
 
-Generate SHAP values by passing the saved PyTorch model path as the first
-argument:
+Generate SHAP values for a saved checkpoint with:
 
 ```bash
-python HRICNN/src/SHAP_Analysis.py HRICNN/Models/ri_model.pt \
-  --output "$PWD/HRICNN/Results/ri_shap.npz"
+python HRICNN/src/SHAP_Analysis.py HRICNN/Models/Rain_Model.pt \
+    --output HRICNN/Results/rain_shap_values.npz
 ```
 
-The command uses a balanced background sample from the training data and
-explains the test observations. Optional arguments are:
+Optional arguments include:
 
 ```text
 --max-background N   Background examples per RI class (default: 100)
 --max-samples N      Explain at most N test observations
 ```
 
-For a raw `state_dict`, specify its architecture with `--model-class`
-(`Model1`, `Model2`, or `Model3`). Add `--image-only` when that raw state dict
-was trained without SHIPS variables:
+The compressed NumPy output contains image SHAP values, predictions, and the
+expected value. SHIPS-enabled checkpoints also contain SHIPS SHAP values, and
+the script prints aggregate image and per-feature SHIPS statistics.
 
-```bash
-python HRICNN/src/SHAP_Analysis.py HRICNN/Models/model_state_dict.pt \
-  --model-class Model1 --image-only --output "$PWD/HRICNN/Results/image_shap.npz"
-```
+## Current implementation notes
 
-The compressed NumPy output contains `image_shap`, `predictions`, and
-`expected_value`. SHIPS-enabled models also include `ships_shap`; the ten
-SHIPS feature names are printed by the script. The script also prints the
-aggregate `Image` and per-feature SHIPS SHAP statistics (`Mean`, `Median`,
-`Max`, and `Min`) to stdout in the same format as `SHAP_VALUES.txt`.
+- The CNN training loader reads data from `HRICNN/IMERG/`, while the current
+  SHAP script still references `IMERG/Model_Data/` for its background and test
+  data. These paths must be reconciled before the SHAP step can run unchanged
+  after preprocessing.
+- `Plots.R` determines the input mode from filename prefixes. Verify the
+  prefixes against the files produced by `Experiment.sh` before interpreting
+  the generated figures.
+- Results, model checkpoints, generated plots, and SHAP archives are runtime
+  outputs; the source scripts and this README document the reproducible
+  workflow.
