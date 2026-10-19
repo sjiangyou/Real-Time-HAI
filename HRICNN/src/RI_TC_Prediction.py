@@ -31,7 +31,7 @@ class BinaryFocalCrossEntropy(nn.Module):
     def __init__(self):
         super().__init__()
         self.gamma = 2
-        self.alpha = 1 - 0.07036247334754797  # Better match our data's class imbalance
+        self.alpha = 0.5  # Match the resampling of training data
 
     def forward(self, predictions, targets):
         bce = F.binary_cross_entropy(predictions, targets, reduction="none")
@@ -240,7 +240,7 @@ def _prepare_dataframe(path):
 
 def load_data(include_year=False, return_test_dataframe=False):
     """Load train/test arrays and optionally the prediction-aligned test dataframe."""
-    train = _load_arrays(_prepare_dataframe("IMERG/ATL_train.csv"))
+    train = _load_arrays(_prepare_dataframe("IMERG/ATL_train_resample.csv"))
     test_dataframe = _prepare_dataframe("IMERG/ATL_test.csv")
     if return_test_dataframe:
         test, valid_indices = _load_arrays(
@@ -802,7 +802,7 @@ def select_hyperparameters(
     print(f"Stage two validation losses saved to {stage_two_csv_path}")
 
     best_model_index, best_batch_index, best_epoch_index = np.unravel_index(
-        np.nanargmin(scores), scores.shape
+        np.nanargmax(scores), scores.shape
     )
     best_model_class = model_classes[best_model_index]
     best_batch_size = batch_size_candidates[best_batch_index]

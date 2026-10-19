@@ -67,7 +67,7 @@ def _load_model(model_path, model_class=None, image_only=False):
 
 
 def _background_arrays(max_background):
-    dataframe = _prepare_dataframe("IMERG/Model_Data/ATL_train.csv")
+    dataframe = _prepare_dataframe("IMERG/ATL_train.csv")
     false_rows = dataframe[dataframe["RI"] == 0].sample(
         min(max_background, (dataframe["RI"] == 0).sum()), random_state=42
     )
@@ -125,9 +125,7 @@ def generate_shap_values(
         raise ValueError("max_samples must be at least 1 when provided.")
 
     model, use_ships = _load_model(model_path, model_class, image_only)
-    test_img, test_ships, _, _ = _load_arrays(
-        _prepare_dataframe("IMERG/Model_Data/ATL_test.csv")
-    )
+    test_img, test_ships, _, _ = _load_arrays(_prepare_dataframe("IMERG/ATL_test.csv"))
     if max_samples is not None:
         test_img, test_ships = test_img[:max_samples], test_ships[:max_samples]
     background_img, background_ships = _background_arrays(max_background)
