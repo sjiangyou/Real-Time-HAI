@@ -94,7 +94,7 @@ calculate_brier_skill_score <- function(observed, predicted) {
 calculate_model_metrics <- function(data) {
     predicted_classes <- classify_predictions(data$Prediction)
 
-    list(
+    metrics <- list(
         brier_score = calculate_brier_score(data$RI, data$Prediction),
         brier_skill_score = calculate_brier_skill_score(
             data$RI,
@@ -104,6 +104,10 @@ calculate_model_metrics <- function(data) {
         far = calculate_FAR(data$RI, predicted_classes),
         pss = calculate_PSS(data$RI, predicted_classes)
     )
+
+    metrics$overall_score <- metrics$brier_skill_score +
+        metrics$pod - metrics$far + metrics$pss
+    metrics
 }
 
 
@@ -156,6 +160,15 @@ print_model_metrics <- function(model_name, metrics) {
     cat(sprintf("  POD:               %.6f\n", metrics$pod))
     cat(sprintf("  FAR:               %.6f\n", metrics$far))
     cat(sprintf("  PSS:               %.6f\n", metrics$pss))
+    cat(sprintf("  OS:                %.6f\n", metrics$overall_score))
+    metrics
+}
+
+save_all_model_metrics <- function(metrics_list, output_path) {
+    metrics_df <- do.call(rbind, lapply(metrics_list, as.data.frame))
+    rownames(metrics_df) <- names(metrics_list)
+    colnames(metrics_df) <- c("BS", "BSS", "POD", "FAR", "PSS", "OS")
+    write.csv(metrics_df, file = output_path, row.names = TRUE)
 }
 
 
@@ -188,17 +201,26 @@ cat(sprintf(
     climatological_brier_score
 ))
 
-print_model_metrics(
-    "Rainfall + SHIPS model",
+rain_ships_metrics <- print_model_metrics(
+    "RAIN+SHIPS",
     calculate_model_metrics(rain_data)
 )
 cat("\n")
-print_model_metrics(
-    "Image-only model",
+rain_only_metrics <- print_model_metrics(
+    "RAIN",
     calculate_model_metrics(model_data)
 )
 cat("\n")
-print_model_metrics(
-    "SHIPS-only model",
+ships_metrics <- print_model_metrics(
+    "SHIPS",
     calculate_model_metrics(ships_data)
+)
+
+save_all_model_metrics(
+    list(
+        "RAIN+SHIPS" = rain_ships_metrics,
+        "RAIN" = rain_only_metrics,
+        "SHIPS" = ships_metrics
+    ),
+    file.path(results_directory, "model_metrics.csv")
 )

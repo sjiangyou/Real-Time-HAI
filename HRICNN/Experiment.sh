@@ -19,5 +19,5 @@ python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/Rain_Model.pt" --ou
 python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/Model.pt" --output "$REPO_ROOT/HRICNN/Results/shap_values.npz" --max-background 25
 
 # Generate figures and statistics
-Rscript HRICNN/src/Plots.R
 Rscript HRICNN/src/Analysis.R
+Rscript HRICNN/src/Plots.R

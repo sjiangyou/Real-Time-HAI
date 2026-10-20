@@ -174,4 +174,92 @@ for (mode_name in names(input_modes)) {
     }
 }
 
-message("Saved HRICNN hyperparameter plots to: ", plots_directory)
+# Create one figure containing comparisons for every requested metric. The
+# model names are read from the CSV, so adding model rows requires no changes
+# to this plotting function.
+plot_metric_comparisons <- function(
+    metric_csv_path = file.path(results_directory, "model_metrics.csv"),
+    output_path = file.path(plots_directory, "model_metric_comparisons.png")
+) {
+    if (!file.exists(metric_csv_path)) {
+        stop("Missing model-metrics file: ", metric_csv_path)
+    }
+
+    metrics <- read.csv(
+        metric_csv_path,
+        stringsAsFactors = FALSE,
+        check.names = FALSE,
+        row.names = 1
+    )
+    metric_names <- c("POD", "FAR", "PSS", "BSS", "OS")
+    missing_metrics <- setdiff(metric_names, names(metrics))
+
+    if (length(missing_metrics) > 0) {
+        stop(
+            "The file ", metric_csv_path, " is missing metric column(s): ",
+            paste(missing_metrics, collapse = ", ")
+        )
+    }
+
+    if (nrow(metrics) == 0) {
+        stop("The model-metrics file contains no model rows: ", metric_csv_path)
+    }
+
+    model_names <- rownames(metrics)
+    if (any(is.na(model_names) | model_names == "")) {
+        stop("Every model row in the model-metrics file must have a name.")
+    }
+
+    metric_values <- do.call(
+        rbind,
+        lapply(metric_names, function(metric_name) {
+            values <- as.numeric(metrics[[metric_name]])
+            if (anyNA(values)) {
+                stop("Metric column ", metric_name, " contains non-numeric values.")
+            }
+
+            data.frame(
+                Model = model_names,
+                Metric = metric_name,
+                Value = values,
+                stringsAsFactors = FALSE
+            )
+        })
+    )
+    metric_values$Metric <- factor(metric_values$Metric, levels = metric_names)
+    metric_values$Model <- factor(metric_values$Model, levels = model_names)
+
+    comparison_plot <- ggplot(
+        metric_values,
+        aes(x = Model, y = Value, fill = Model)
+    ) +
+    geom_col(width = 0.65) +
+    geom_hline(yintercept = 0, color = "grey50", linewidth = 0.3) +
+    facet_wrap(~Metric, ncol = 5) +
+    labs(
+        title = "HRICNN test-metric comparison",
+        x = NULL,
+        y = "Metric value"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+        legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(face = "bold")
+    )
+
+    ggsave(
+        filename = output_path,
+        plot = comparison_plot,
+        width = 18,
+        height = 5,
+        dpi = 300
+    )
+
+    invisible(comparison_plot)
+}
+
+plot_metric_comparisons()
+
+message("Saved HRICNN plots to: ", plots_directory)

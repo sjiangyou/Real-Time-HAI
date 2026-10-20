@@ -126,6 +126,8 @@ and reports Brier Score, Brier Skill Score, Probability of Detection (POD),
 False Alarm Ratio (FAR), and Peirce Skill Score (PSS). Brier-based metrics use
 prediction probabilities directly; threshold-based metrics use the
 configurable `classification_boundary` in `Analysis.R`, currently `0.21`.
+It also saves the derived overall score, `OS = BSS + POD - FAR + PSS`, to
+`HRICNN/Results/model_metrics.csv`.
 
 ## Hyperparameter plots
 
@@ -137,7 +139,14 @@ Rscript HRICNN/src/Plots.R
 
 The script writes plots to `HRICNN/Results/Plots/`. Stage 1 plots summarize
 the maximum OS for each batch size; stage 2 plots show OS by epoch and
-highlight the best epoch. The current plot script distinguishes input modes
+highlight the best epoch. It also writes
+`model_metric_comparisons.png`, a single five-panel test-metric comparison
+figure arranged left-to-right as POD, FAR, PSS, BSS, and OS with a shared
+y-axis. Model colors are identified by a shared legend, rather than repeated
+x-axis labels. The comparison function reads model names from
+`model_metrics.csv`, so additional model rows are included automatically as
+long as the CSV contains those five metric columns. The
+current plot script distinguishes input modes
 by filename prefix, so its expected prefixes should be kept consistent with
 the loss-file paths passed to `RI_TC_Prediction.py`.
 
