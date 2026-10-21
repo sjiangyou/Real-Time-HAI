@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader, TensorDataset
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BATCH_SIZE = 1
 EPOCHS = 6
-EPOCH_CANDIDATES = range(1, 101)
+EPOCH_CANDIDATES = range(1, 51)
 BATCH_SIZE_CANDIDATES = (1, 2, 4, 8, 16)
 LEARNING_RATE = 0.001
 VALIDATION_SPLIT = 0.1
@@ -31,7 +31,7 @@ class BinaryFocalCrossEntropy(nn.Module):
     def __init__(self):
         super().__init__()
         self.gamma = 2
-        self.alpha = 0.5  # Match the resampling of training data
+        self.alpha = 1 - 0.07036247334754797  # Better match our data's class imbalance
 
     def forward(self, predictions, targets):
         bce = F.binary_cross_entropy(predictions, targets, reduction="none")
@@ -48,7 +48,7 @@ class BinaryFocalCrossEntropy(nn.Module):
 
 
 def _save_model_checkpoint(model, path):
-    """Save the selected model and the input schema needed to restore it."""
+    """Save a trained model and the input schema needed to restore it."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -62,8 +62,21 @@ def _save_model_checkpoint(model, path):
     print(f"Saved model to {path}")
 
 
+def _model_output_path(path, model_class):
+    """Insert an architecture name before the suffix of an output path."""
+    path = Path(path)
+    return path.with_name(f"{path.stem}_{model_class.__name__}{path.suffix}")
+
+
 def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=None):
     gpu_test()
+
+    if loss_csv_path is None:
+        loss_csv_path = (
+            "rain_hyperparameter_validation_losses.csv"
+            if image_only
+            else "rain_ships_hyperparameter_validation_losses.csv"
+        )
 
     data, test_dataframe = load_data(
         include_year=True,
@@ -88,7 +101,7 @@ def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=
         use_ships=not image_only,
     )
 
-    trained_model, predictions = run_models(
+    trained_models, predictions_by_model = run_models(
         *models,
         train_img,
         train_ships,
@@ -101,18 +114,22 @@ def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=
         loss_csv_path=loss_csv_path,
     )
 
-    if output_csv_path is not None:
-        test_dataframe = test_dataframe.copy()
-        test_dataframe["Prediction"] = predictions
-        output_csv_path = Path(output_csv_path)
-        output_csv_path.parent.mkdir(parents=True, exist_ok=True)
-        test_dataframe.to_csv(output_csv_path, index=False)
-        print(f"Test predictions saved to {output_csv_path}")
+    for model_class, model in trained_models.items():
+        if output_csv_path is not None:
+            model_output_path = _model_output_path(output_csv_path, model_class)
+            model_test_dataframe = test_dataframe.copy()
+            model_test_dataframe["Prediction"] = predictions_by_model[model_class]
+            model_output_path.parent.mkdir(parents=True, exist_ok=True)
+            model_test_dataframe.to_csv(model_output_path, index=False)
+            print(
+                f"{model_class.__name__} test predictions saved to {model_output_path}"
+            )
 
-    if save_model is not None:
-        _save_model_checkpoint(trained_model, save_model)
+        if save_model is not None:
+            model_checkpoint_path = _model_output_path(save_model, model_class)
+            _save_model_checkpoint(model, model_checkpoint_path)
 
-    return trained_model
+    return trained_models
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +257,7 @@ def _prepare_dataframe(path):
 
 def load_data(include_year=False, return_test_dataframe=False):
     """Load train/test arrays and optionally the prediction-aligned test dataframe."""
-    train = _load_arrays(_prepare_dataframe("IMERG/ATL_train_resample.csv"))
+    train = _load_arrays(_prepare_dataframe("IMERG/ATL_train.csv"))
     test_dataframe = _prepare_dataframe("IMERG/ATL_test.csv")
     if return_test_dataframe:
         test, valid_indices = _load_arrays(
@@ -587,7 +604,7 @@ def select_hyperparameters(
     use_ships=True,
     loss_csv_path=None,
 ):
-    """Select hyperparameters with staged leave-one-year-out cross-validation.
+    """Select hyperparameters for every architecture with staged validation.
 
     Only the prepared training split is used for selection; the test split is
     never passed to this function. Each distinct training year is held out in
@@ -596,6 +613,7 @@ def select_hyperparameters(
     overall score (OS = BSS + POD - FAR + PSS). All architecture/batch
     combinations are evaluated through epoch 10 first; only the best batch
     size for each architecture is evaluated beyond epoch 10.
+    The returned list contains one selected configuration per architecture.
     """
     if years_train is None:
         raise ValueError("Training arrays with years are required.")
@@ -606,10 +624,15 @@ def select_hyperparameters(
     if not epoch_candidates or not batch_size_candidates or not model_classes:
         raise ValueError("Candidate architectures and hyperparameters cannot be empty.")
     max_epochs = max(epoch_candidates)
-    loss_csv_path = Path(loss_csv_path or "hyperparameter_validation_losses.csv")
+    loss_csv_path = Path(
+        loss_csv_path or "rain_ships_hyperparameter_validation_losses.csv"
+    )
     loss_csv_path.parent.mkdir(parents=True, exist_ok=True)
     stage_one_csv_path = loss_csv_path.with_name(f"{loss_csv_path.stem}_stage1.csv")
     stage_two_csv_path = loss_csv_path.with_name(f"{loss_csv_path.stem}_stage2.csv")
+    best_hyperparameters_csv_path = loss_csv_path.with_name(
+        f"{loss_csv_path.stem}_best_hyperparameters.csv"
+    )
     csv_columns = [
         "Model",
         "Epoch",
@@ -623,6 +646,7 @@ def select_hyperparameters(
     ]
     pd.DataFrame(columns=csv_columns).to_csv(stage_one_csv_path, index=False)
     pd.DataFrame(columns=csv_columns).to_csv(stage_two_csv_path, index=False)
+    best_hyperparameter_rows = []
     train_img = X_train_img
     train_ships = X_train_ships
     train_labels = y_train
@@ -640,6 +664,10 @@ def select_hyperparameters(
         np.nan,
         dtype=np.float64,
     )
+    validation_metrics = {
+        name: np.full_like(scores, np.nan)
+        for name in ("Loss", "BSS", "POD", "FAR", "PSS", "OS")
+    }
     criterion = BinaryFocalCrossEntropy()
 
     def evaluate_configuration(
@@ -737,8 +765,14 @@ def select_hyperparameters(
                 ]
             ).to_csv(stage_one_csv_path, mode="a", header=False, index=False)
             for epoch in stage_one_candidates:
-                validation_score = mean_metrics["OS"][epoch - 1]
-                scores[model_index, batch_index, epoch - 1] = validation_score
+                epoch_index = epoch - 1
+                for name in validation_metrics:
+                    validation_metrics[name][model_index, batch_index, epoch_index] = (
+                        mean_metrics[name][epoch_index]
+                    )
+                scores[model_index, batch_index, epoch_index] = mean_metrics["OS"][
+                    epoch_index
+                ]
             print(
                 f"Validation architecture {model_class.__name__}, "
                 f"batch size {batch_size} complete; "
@@ -792,8 +826,14 @@ def select_hyperparameters(
             ]
         ).to_csv(stage_two_csv_path, mode="a", header=False, index=False)
         for epoch in stage_two_candidates:
-            validation_score = mean_metrics["OS"][epoch - 1]
-            scores[model_index, batch_index, epoch - 1] = validation_score
+            epoch_index = epoch - 1
+            for name in validation_metrics:
+                validation_metrics[name][model_index, batch_index, epoch_index] = (
+                    mean_metrics[name][epoch_index]
+                )
+            scores[model_index, batch_index, epoch_index] = mean_metrics["OS"][
+                epoch_index
+            ]
         print(
             f"Stage two complete: {model_class.__name__}; " f"batch size={batch_size}"
         )
@@ -801,19 +841,60 @@ def select_hyperparameters(
     print(f"Stage one validation losses saved to {stage_one_csv_path}")
     print(f"Stage two validation losses saved to {stage_two_csv_path}")
 
-    best_model_index, best_batch_index, best_epoch_index = np.unravel_index(
-        np.nanargmax(scores), scores.shape
+    selected_hyperparameters = []
+    for model_index, model_class in enumerate(model_classes):
+        model_scores = scores[model_index]
+        batch_index, epoch_index = np.unravel_index(
+            np.nanargmax(model_scores), model_scores.shape
+        )
+        best_batch_size = batch_size_candidates[batch_index]
+        best_epochs = epoch_index + 1
+        validation_os = model_scores[batch_index, epoch_index]
+        selected_hyperparameters.append(
+            {
+                "model_class": model_class,
+                "epochs": best_epochs,
+                "batch_size": best_batch_size,
+                "validation_os": validation_os,
+            }
+        )
+        best_hyperparameter_rows.append(
+            {
+                "Model": model_class.__name__,
+                "Epoch": best_epochs,
+                "Batch": best_batch_size,
+                "Validation_Loss": validation_metrics["Loss"][
+                    model_index, batch_index, epoch_index
+                ],
+                "Validation_BSS": validation_metrics["BSS"][
+                    model_index, batch_index, epoch_index
+                ],
+                "Validation_POD": validation_metrics["POD"][
+                    model_index, batch_index, epoch_index
+                ],
+                "Validation_FAR": validation_metrics["FAR"][
+                    model_index, batch_index, epoch_index
+                ],
+                "Validation_PSS": validation_metrics["PSS"][
+                    model_index, batch_index, epoch_index
+                ],
+                "Validation_OS": validation_os,
+            }
+        )
+        print(
+            f"Selected hyperparameters for {model_class.__name__}: "
+            f"epochs={best_epochs}; batch size={best_batch_size}; "
+            f"validation OS={validation_os:.6f}"
+        )
+
+    pd.DataFrame(best_hyperparameter_rows).to_csv(
+        best_hyperparameters_csv_path, index=False
     )
-    best_model_class = model_classes[best_model_index]
-    best_batch_size = batch_size_candidates[best_batch_index]
-    best_epochs = best_epoch_index + 1
     print(
-        f"Selected architecture: {best_model_class.__name__}; "
-        f"epochs: {best_epochs}; batch size: {best_batch_size}; "
-        f"validation OS: "
-        f"{scores[best_model_index, best_batch_index, best_epoch_index]:.6f}"
+        f"Best hyperparameters for all architectures saved to "
+        f"{best_hyperparameters_csv_path}"
     )
-    return best_model_class, best_epochs, best_batch_size
+    return selected_hyperparameters
 
 
 # ---------------------------------------------------------------------------
@@ -835,7 +916,8 @@ def run_models(
     use_ships=True,
     loss_csv_path=None,
 ):
-    best_model_class, best_epochs, best_batch_size = select_hyperparameters(
+    """Tune, retrain, and evaluate all supplied CNN architectures."""
+    selected_hyperparameters = select_hyperparameters(
         X_train_img,
         X_train_ships,
         y_train,
@@ -844,46 +926,47 @@ def run_models(
         loss_csv_path=loss_csv_path,
     )
 
-    # Selection models are discarded; fit the winning architecture on the
-    # training split before evaluating on the untouched test set.
-    new_model1 = best_model_class(use_ships=use_ships).to(DEVICE)
-    new_model1 = train_model(
-        new_model1,
-        X_train_img,
-        X_train_ships,
-        y_train,
-        epochs=best_epochs,
-        batch_size=best_batch_size,
-        use_ships=use_ships,
-    )
-
     test_dataset = TensorDataset(
         torch.from_numpy(X_test_img),
         torch.from_numpy(X_test_ships),
         torch.from_numpy(y_test),
     )
 
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=best_batch_size,
-        shuffle=False,
-    )
-
     criterion = BinaryFocalCrossEntropy()
+    trained_models = {}
+    predictions_by_model = {}
+    for selection in selected_hyperparameters:
+        model_class = selection["model_class"]
+        model = model_class(use_ships=use_ships).to(DEVICE)
+        model = train_model(
+            model,
+            X_train_img,
+            X_train_ships,
+            y_train,
+            epochs=selection["epochs"],
+            batch_size=selection["batch_size"],
+            use_ships=use_ships,
+        )
 
-    test_loss, test_mae, test_mse, preds, labels = evaluate_model(
-        new_model1,
-        test_loader,
-        criterion,
-    )
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=selection["batch_size"],
+            shuffle=False,
+        )
+        test_loss, test_mae, test_mse, preds, _ = evaluate_model(
+            model,
+            test_loader,
+            criterion,
+        )
+        print(
+            f"{model_class.__name__} test results | "
+            f"Loss: {test_loss:.6f} | MAE: {test_mae:.6f} | MSE: {test_mse:.6f}"
+        )
 
-    print(f"Test Loss: {test_loss:.6f}")
-    print(f"Test MAE: {test_mae:.6f}")
-    print(f"Test MSE: {test_mse:.6f}")
+        trained_models[model_class] = model
+        predictions_by_model[model_class] = np.average(preds, axis=1)
 
-    preds = np.average(preds, axis=1)
-
-    return new_model1, preds
+    return trained_models, predictions_by_model
 
 
 # ---------------------------------------------------------------------------
