@@ -173,54 +173,75 @@ save_all_model_metrics <- function(metrics_list, output_path) {
 
 
 results_directory <- here::here("HRICNN", "Results")
-rain_output_path <- file.path(results_directory, "rain_model_output.csv")
-model_output_path <- file.path(results_directory, "model_output.csv")
 ships_output_path <- file.path(results_directory, "SHIPS_predictions.csv")
 
-rain_data <- read.csv(rain_output_path, stringsAsFactors = FALSE)
-model_data <- read.csv(model_output_path, stringsAsFactors = FALSE)
+cnn_output_paths <- c(
+    "RAIN+SHIPS_Model1" = file.path(
+        results_directory, "rain_ships_model_output_Model1.csv"
+    ),
+    "RAIN+SHIPS_Model2" = file.path(
+        results_directory, "rain_ships_model_output_Model2.csv"
+    ),
+    "RAIN+SHIPS_Model3" = file.path(
+        results_directory, "rain_ships_model_output_Model3.csv"
+    ),
+    "RAIN_Model1" = file.path(
+        results_directory, "rain_model_output_Model1.csv"
+    ),
+    "RAIN_Model2" = file.path(
+        results_directory, "rain_model_output_Model2.csv"
+    ),
+    "RAIN_Model3" = file.path(
+        results_directory, "rain_model_output_Model3.csv"
+    )
+)
+
+cnn_data <- lapply(cnn_output_paths, function(path) {
+    read.csv(path, stringsAsFactors = FALSE)
+})
+names(cnn_data) <- names(cnn_output_paths)
 ships_data <- read.csv(ships_output_path, stringsAsFactors = FALSE)
 
-validate_prediction_data(rain_data, "rain_model_output.csv")
-validate_prediction_data(model_data, "model_output.csv")
+for (model_name in names(cnn_data)) {
+    validate_prediction_data(cnn_data[[model_name]], model_name)
+}
 validate_prediction_data(ships_data, "SHIPS_predictions.csv")
-validate_matching_observations(rain_data, model_data)
-validate_matching_observations(rain_data, ships_data)
+reference_data <- cnn_data[[1]]
+for (model_name in names(cnn_data)[-1]) {
+    validate_matching_observations(reference_data, cnn_data[[model_name]])
+}
+validate_matching_observations(reference_data, ships_data)
 
 climatological_probability <- 0.5
 climatological_brier_score <- calculate_climatological_brier_score(
-    rain_data$RI
+    reference_data$RI
 )
 
 cat("HRICNN prediction metrics\n")
 cat("=========================\n")
-cat(sprintf("Observations: %d\n", nrow(rain_data)))
+cat(sprintf("Observations: %d\n", nrow(reference_data)))
 cat(sprintf("RI prevalence: %.6f\n", climatological_probability))
 cat(sprintf(
     "Climatological Brier Score: %.6f\n\n",
     climatological_brier_score
 ))
 
-rain_ships_metrics <- print_model_metrics(
-    "RAIN+SHIPS",
-    calculate_model_metrics(rain_data)
-)
-cat("\n")
-rain_only_metrics <- print_model_metrics(
-    "RAIN",
-    calculate_model_metrics(model_data)
-)
-cat("\n")
 ships_metrics <- print_model_metrics(
     "SHIPS",
     calculate_model_metrics(ships_data)
 )
 
+metrics_list <- list()
+for (model_name in names(cnn_data)) {
+    cat("\n")
+    metrics_list[[model_name]] <- print_model_metrics(
+        model_name,
+        calculate_model_metrics(cnn_data[[model_name]])
+    )
+}
+metrics_list[["SHIPS"]] <- ships_metrics
+
 save_all_model_metrics(
-    list(
-        "RAIN+SHIPS" = rain_ships_metrics,
-        "RAIN" = rain_only_metrics,
-        "SHIPS" = ships_metrics
-    ),
+    metrics_list,
     file.path(results_directory, "model_metrics.csv")
 )

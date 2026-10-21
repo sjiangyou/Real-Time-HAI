@@ -73,8 +73,10 @@ OS = BSS + POD - FAR + PSS
 
 BSS uses a uniform binary climatological probability of 0.5. POD, FAR, and
 PSS use the 0.21 classification boundary. Each held-out year contributes
-equally to the cross-validation mean. The selected architecture is retrained
-on the complete training split and evaluated on the untouched test split.
+equally to the cross-validation mean. Each architecture's best
+configuration is saved, then all three architectures are retrained on the
+complete training split and evaluated independently on the untouched test
+split.
 
 Validation results are written to stage-specific CSV files. For example,
 `--loss-csv-path results/losses.csv` creates:
@@ -83,22 +85,27 @@ Validation results are written to stage-specific CSV files. For example,
 - `results/losses_stage2.csv`
 
 The files contain `Model`, `Epoch`, `Batch`, `Loss`, `BSS`, `POD`, `FAR`,
-`PSS`, and `OS` columns. Pass `--output-csv-path` to save valid test rows and
-their predictions, and `--save-model` to save a checkpoint containing the
-selected architecture and input mode.
+`PSS`, and `OS` columns. A third file ending in
+`_best_hyperparameters.csv` records the selected epochs, batch size, and
+validation metrics for all three architectures. Pass `--output-csv-path` to
+save valid test rows and separate predictions for `Model1`, `Model2`, and
+`Model3`; pass `--save-model` to save a separate checkpoint for each
+architecture. For example, the existing rainfall-plus-SHIPS command produces
+`rain_ships_model_Model1.pt`, `rain_ships_model_Model2.pt`, and
+`rain_ships_model_Model3.pt`, plus corresponding prediction CSVs.
 
 To train the image-only CNN, use:
 
 ```bash
 python HRICNN/src/RI_TC_Prediction.py \
     --image-only \
-    --loss-csv-path HRICNN/Results/image_hyperparameter_validation_losses.csv
+    --loss-csv-path HRICNN/Results/rain_hyperparameter_validation_losses.csv
 ```
 
-The experiment script saves the rainfall-plus-SHIPS model as
-`HRICNN/Models/Rain_Model.pt` and the image-only model as
-`HRICNN/Models/Model.pt`. Their test predictions are saved as
-`rain_model_output.csv` and `model_output.csv`, respectively.
+The experiment script saves three rainfall-plus-SHIPS checkpoints with
+`rain_ships_model_Model*.pt` names and three rainfall-only checkpoints with
+`rain_model_Model*.pt` names. Their test predictions use corresponding
+`rain_ships_model_output_Model*.csv` and `rain_model_output_Model*.csv` names.
 
 ## SHIPS-only baseline
 
@@ -114,15 +121,15 @@ The script uses `HRICNN/IMERG/ATL_train_resample.csv` and
 
 ## Prediction analysis
 
-Calculate metrics for the rainfall-plus-SHIPS CNN, image-only CNN, and
-SHIPS-only baseline with:
+Calculate metrics for all six trained CNN variants and the SHIPS-only baseline
+with:
 
 ```bash
 Rscript HRICNN/src/Analysis.R
 ```
 
-The script validates that all three output files contain matching observations
-and reports Brier Score, Brier Skill Score, Probability of Detection (POD),
+The script validates that all output files contain matching observations and
+reports Brier Score, Brier Skill Score, Probability of Detection (POD),
 False Alarm Ratio (FAR), and Peirce Skill Score (PSS). Brier-based metrics use
 prediction probabilities directly; threshold-based metrics use the
 configurable `classification_boundary` in `Analysis.R`, currently `0.21`.
@@ -146,17 +153,17 @@ y-axis. Model colors are identified by a shared legend, rather than repeated
 x-axis labels. The comparison function reads model names from
 `model_metrics.csv`, so additional model rows are included automatically as
 long as the CSV contains those five metric columns. The
-current plot script distinguishes input modes
-by filename prefix, so its expected prefixes should be kept consistent with
-the loss-file paths passed to `RI_TC_Prediction.py`.
+current plot script distinguishes input modes by filename prefix, so its
+expected prefixes should be kept consistent with the loss-file paths passed to
+`RI_TC_Prediction.py`.
 
 ## SHAP analysis
 
 Generate SHAP values for a saved checkpoint with:
 
 ```bash
-python HRICNN/src/SHAP_Analysis.py HRICNN/Models/Rain_Model.pt \
-    --output HRICNN/Results/rain_shap_values.npz
+python HRICNN/src/SHAP_Analysis.py HRICNN/Models/rain_ships_model_Model1.pt \
+    --output HRICNN/Results/rain_ships_Model1_shap_values.npz
 ```
 
 Optional arguments include:
@@ -176,9 +183,8 @@ the script prints aggregate image and per-feature SHIPS statistics.
   SHAP script still references `IMERG/Model_Data/` for its background and test
   data. These paths must be reconciled before the SHAP step can run unchanged
   after preprocessing.
-- `Plots.R` determines the input mode from filename prefixes. Verify the
-  prefixes against the files produced by `Experiment.sh` before interpreting
-  the generated figures.
+- `Plots.R` determines the input mode from the `rain_` and `rain_ships_`
+  filename prefixes used by `Experiment.sh`.
 - Results, model checkpoints, generated plots, and SHAP archives are runtime
   outputs; the source scripts and this README document the reproducible
   workflow.

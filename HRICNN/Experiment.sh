@@ -10,13 +10,13 @@ Rscript HRICNN/src/Model_Prep.R
 
 # Train models
 mkdir -p HRICNN/Results
-python HRICNN/src/RI_TC_Prediction.py --save-model "$REPO_ROOT/HRICNN/Models/Rain_Model.pt" --loss-csv-path HRICNN/Results/rain_hyperparameter_validation_losses.csv --output-csv-path HRICNN/Results/rain_model_output.csv
-python HRICNN/src/RI_TC_Prediction.py --image-only --save-model "$REPO_ROOT/HRICNN/Models/Model.pt" --loss-csv-path HRICNN/Results/hyperparameter_validation_losses.csv --output-csv-path HRICNN/Results/model_output.csv
+python HRICNN/src/RI_TC_Prediction.py --save-model "$REPO_ROOT/HRICNN/Models/rain_ships_model.pt" --loss-csv-path HRICNN/Results/rain_ships_hyperparameter_validation_losses.csv --output-csv-path HRICNN/Results/rain_ships_model_output.csv
+python HRICNN/src/RI_TC_Prediction.py --image-only --save-model "$REPO_ROOT/HRICNN/Models/rain_model.pt" --loss-csv-path HRICNN/Results/rain_hyperparameter_validation_losses.csv --output-csv-path HRICNN/Results/rain_model_output.csv
 Rscript HRICNN/src/SHIPS.R
 
 # Compute SHAP values
-python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/Rain_Model.pt" --output "$REPO_ROOT/HRICNN/Results/rain_shap_values.npz" --max-background 25
-python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/Model.pt" --output "$REPO_ROOT/HRICNN/Results/shap_values.npz" --max-background 25
+python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/rain_ships_model_Model1.pt" --output "$REPO_ROOT/HRICNN/Results/rain_ships_Model1_shap_values.npz" --max-background 25
+python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/rain_model_Model1.pt" --output "$REPO_ROOT/HRICNN/Results/rain_Model1_shap_values.npz" --max-background 25
 
 # Generate figures and statistics
 Rscript HRICNN/src/Analysis.R

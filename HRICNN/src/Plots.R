@@ -11,8 +11,8 @@ library(ggplot2)
 # Run from the repository root with:
 #   Rscript HRICNN/src/Plots.R
 #
-# Standard files represent models trained with SHIPS data (Rain). Files whose
-# names begin with "rain_" represent image-only models without SHIPS data.
+# Files beginning with "rain_" represent rainfall-only models. Files beginning
+# with "rain_ships_" represent rainfall-plus-SHIPS models.
 
 results_directory <- here::here("HRICNN", "Results")
 plots_directory <- file.path(results_directory, "Plots")
@@ -21,8 +21,8 @@ dir.create(plots_directory, recursive = TRUE, showWarnings = FALSE)
 model_names <- c("Model1", "Model2", "Model3")
 
 input_modes <- list(
-    Rain = list(prefix = "", label = "Rain + SHIPS"),
-    NoRain = list(prefix = "rain_", label = "Rain only")
+    Rain = list(prefix = "rain_", label = "RAIN"),
+    RainShips = list(prefix = "rain_ships_", label = "RAIN+SHIPS")
 )
 
 read_loss_data <- function(path) {
