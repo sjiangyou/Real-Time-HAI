@@ -101,7 +101,7 @@ def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=
         use_ships=not image_only,
     )
 
-    trained_models, predictions_by_model = run_models(
+    trained_models, predictions_by_model, best_model_class = run_models(
         *models,
         train_img,
         train_ships,
@@ -128,6 +128,16 @@ def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=
         if save_model is not None:
             model_checkpoint_path = _model_output_path(save_model, model_class)
             _save_model_checkpoint(model, model_checkpoint_path)
+
+    if save_model is not None:
+        best_model_alias = Path(save_model).parent / (
+            "RAIN.pt" if image_only else "RAIN+SHIPS.pt"
+        )
+        _save_model_checkpoint(trained_models[best_model_class], best_model_alias)
+        print(
+            f"Best {best_model_class.__name__} checkpoint saved as "
+            f"{best_model_alias} for SHAP analysis"
+        )
 
     return trained_models
 
@@ -966,7 +976,11 @@ def run_models(
         trained_models[model_class] = model
         predictions_by_model[model_class] = np.average(preds, axis=1)
 
-    return trained_models, predictions_by_model
+    best_model_class = max(
+        selected_hyperparameters,
+        key=lambda selection: selection["validation_os"],
+    )["model_class"]
+    return trained_models, predictions_by_model, best_model_class
 
 
 # ---------------------------------------------------------------------------

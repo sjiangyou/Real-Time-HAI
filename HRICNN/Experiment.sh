@@ -15,8 +15,8 @@ python HRICNN/src/RI_TC_Prediction.py --image-only --save-model "$REPO_ROOT/HRIC
 Rscript HRICNN/src/SHIPS.R
 
 # Compute SHAP values
-python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/rain_ships_model_Model1.pt" --output "$REPO_ROOT/HRICNN/Results/rain_ships_Model1_shap_values.npz" --max-background 25
-python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/rain_model_Model1.pt" --output "$REPO_ROOT/HRICNN/Results/rain_Model1_shap_values.npz" --max-background 25
+python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/RAIN+SHIPS.pt" --output "$REPO_ROOT/HRICNN/Results/rain_ships_shap_values.npz" --max-background 25
+python HRICNN/src/SHAP_Analysis.py "$REPO_ROOT/HRICNN/Models/RAIN.pt" --output "$REPO_ROOT/HRICNN/Results/rain_shap_values.npz" --max-background 25
 
 # Generate figures and statistics
 Rscript HRICNN/src/Analysis.R

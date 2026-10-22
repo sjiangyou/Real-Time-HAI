@@ -92,7 +92,9 @@ save valid test rows and separate predictions for `Model1`, `Model2`, and
 `Model3`; pass `--save-model` to save a separate checkpoint for each
 architecture. For example, the existing rainfall-plus-SHIPS command produces
 `rain_ships_model_Model1.pt`, `rain_ships_model_Model2.pt`, and
-`rain_ships_model_Model3.pt`, plus corresponding prediction CSVs.
+`rain_ships_model_Model3.pt`, plus corresponding prediction CSVs. It also
+saves the best architecture as `RAIN+SHIPS.pt` (or `RAIN.pt` for image-only
+training) for downstream analysis.
 
 To train the image-only CNN, use:
 
@@ -144,15 +146,23 @@ Generate plots from the saved staged validation CSV files with:
 Rscript HRICNN/src/Plots.R
 ```
 
-The script writes plots to `HRICNN/Results/Plots/`. Stage 1 plots summarize
-the maximum OS for each batch size; stage 2 plots show OS by epoch and
-highlight the best epoch. It also writes
-`model_metric_comparisons.png`, a single five-panel test-metric comparison
-figure arranged left-to-right as POD, FAR, PSS, BSS, and OS with a shared
-y-axis. Model colors are identified by a shared legend, rather than repeated
-x-axis labels. The comparison function reads model names from
-`model_metrics.csv`, so additional model rows are included automatically as
-long as the CSV contains those five metric columns. The
+The script writes plots to `HRICNN/Results/Plots/`. For each input mode, it
+writes one six-panel image containing the three stage 1 plots in the top row
+and the three stage 2 plots in the bottom row:
+
+- `hyperparameter_selection_Rain.png`
+- `hyperparameter_selection_RainShips.png`
+- `hricnn_model_comparisons.png`
+- `model_metric_comparisons.png`
+
+Stage 1 panels summarize the maximum OS for each batch size; stage 2 panels
+show OS by epoch and highlight the best epoch. The HRICNN model comparison
+contains three model groups, each with adjacent RAIN and RAIN+SHIPS bars.
+The final `model_metric_comparisons.png` figure selects the RAIN+SHIPS CNN
+with the highest OS and labels it `HRICNN`, includes the `SHIPS-RII` baseline
+(stored under the `SHIPS` row in the CSV), and includes any additional named
+rows in `model_metrics.csv`. The five metric
+columns are required for every displayed row. The
 current plot script distinguishes input modes by filename prefix, so its
 expected prefixes should be kept consistent with the loss-file paths passed to
 `RI_TC_Prediction.py`.
@@ -162,8 +172,8 @@ expected prefixes should be kept consistent with the loss-file paths passed to
 Generate SHAP values for a saved checkpoint with:
 
 ```bash
-python HRICNN/src/SHAP_Analysis.py HRICNN/Models/rain_ships_model_Model1.pt \
-    --output HRICNN/Results/rain_ships_Model1_shap_values.npz
+python HRICNN/src/SHAP_Analysis.py HRICNN/Models/RAIN+SHIPS.pt \
+    --output HRICNN/Results/rain_ships_shap_values.npz
 ```
 
 Optional arguments include:
