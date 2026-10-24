@@ -5,7 +5,8 @@ Intensification Convolutional Neural Network (HRICNN). The CNN predicts
 whether a tropical cyclone will rapidly intensify (`RI = 1`) from a 61 × 61
 IMERG rainfall image. The default model also uses ten SHIPS environmental
 variables. The directory additionally contains an image-only CNN and a
-SHIPS-only linear discriminant analysis baseline.
+SHIPS-only linear discriminant analysis baselines, trained with and without
+class-balanced resampling.
 
 ## Current workflow
 
@@ -22,8 +23,8 @@ The experiment script runs the complete intended workflow:
 ./HRICNN/Experiment.sh
 ```
 
-It prepares the data, trains the two CNN input modes, fits the SHIPS-only
-baseline, generates SHAP values and plots, and prints prediction metrics.
+It prepares the data, trains the two CNN input modes, fits both SHIPS-only
+baselines, generates SHAP values and plots, and prints prediction metrics.
 
 ## Data preparation
 
@@ -65,15 +66,15 @@ binary focal loss. Selection is staged: every architecture/batch-size
 combination is evaluated through epoch 10, then the best batch size for each
 architecture is evaluated through the remaining epoch candidates.
 
-The selection metric is:
+The selection metric is Brier Skill Score (BSS), using a fixed reference
+probability of `0.5`. The same reference probability is used for final test
+reporting.
 
-```text
-OS = BSS + POD - FAR + PSS
-```
-
-BSS uses a uniform binary climatological probability of 0.5. POD, FAR, and
-PSS use the 0.21 classification boundary. Each held-out year contributes
-equally to the cross-validation mean. Each architecture's best
+BSS is calculated as `1 - BS / BS_reference`, where `BS_reference` uses `0.5`
+as the constant forecast. POD, FAR, and PSS use the 0.21 classification
+boundary. OS is still reported as
+`OS = BSS + POD - FAR + PSS`, but it is not used for selection. Each held-out
+year contributes equally to the cross-validation mean. Each architecture's best
 configuration is saved, then all three architectures are retrained on the
 complete training split and evaluated independently on the untouched test
 split.
@@ -96,6 +97,11 @@ architecture. For example, the existing rainfall-plus-SHIPS command produces
 saves the best architecture as `RAIN+SHIPS.pt` (or `RAIN.pt` for image-only
 training) for downstream analysis.
 
+When run through `Experiment.sh`, the selected architecture definitions for
+both input modes are also written to `HRICNN/Results/Architectures.txt`.
+The experiment overwrites this report at the start of the RAIN+SHIPS training
+pass and appends the RAIN-only definitions afterward.
+
 To train the image-only CNN, use:
 
 ```bash
@@ -111,20 +117,23 @@ The experiment script saves three rainfall-plus-SHIPS checkpoints with
 
 ## SHIPS-only baseline
 
-Fit the SHIPS-only linear discriminant analysis baseline with:
+Fit both SHIPS-only linear discriminant analysis baselines with:
 
 ```bash
 Rscript HRICNN/src/SHIPS.R
 ```
 
-The script uses `HRICNN/IMERG/ATL_train_resample.csv` and
-`HRICNN/IMERG/ATL_test.csv`, then writes
-`HRICNN/Results/SHIPS_predictions.csv`.
+The script fits two SHIPS-only linear discriminant analysis baselines: one on
+the original training data and one on the class-balanced resampled training
+data. Both are evaluated on `HRICNN/IMERG/ATL_test.csv`. It writes
+`HRICNN/Results/SHIPS_predictions.csv` and
+`HRICNN/Results/SHIPS_predictions_resample.csv`; both files use the
+`Prediction` column for the test probability.
 
 ## Prediction analysis
 
-Calculate metrics for all six trained CNN variants and the SHIPS-only baseline
-with:
+Calculate metrics for all six trained CNN variants and both SHIPS-only
+baselines with:
 
 ```bash
 Rscript HRICNN/src/Analysis.R
@@ -136,7 +145,10 @@ False Alarm Ratio (FAR), and Peirce Skill Score (PSS). Brier-based metrics use
 prediction probabilities directly; threshold-based metrics use the
 configurable `classification_boundary` in `Analysis.R`, currently `0.21`.
 It also saves the derived overall score, `OS = BSS + POD - FAR + PSS`, to
-`HRICNN/Results/model_metrics.csv`.
+`HRICNN/Results/model_metrics.csv`. The SHIPS rows are named
+`SHIPS_non_resampled` and `SHIPS_resampled`; both use the fixed `0.5` Brier
+reference probability. The same final evaluation report printed to the console
+is saved to `HRICNN/Results/METRICS.txt`.
 
 ## Hyperparameter plots
 
@@ -155,12 +167,12 @@ and the three stage 2 plots in the bottom row:
 - `hricnn_model_comparisons.png`
 - `model_metric_comparisons.png`
 
-Stage 1 panels summarize the maximum OS for each batch size; stage 2 panels
-show OS by epoch and highlight the best epoch. The HRICNN model comparison
+Stage 1 panels summarize the maximum BSS for each batch size; stage 2 panels
+show BSS by epoch and highlight the best epoch. The HRICNN model comparison
 contains three model groups, each with adjacent RAIN and RAIN+SHIPS bars.
 The final `model_metric_comparisons.png` figure selects the RAIN+SHIPS CNN
-with the highest OS and labels it `HRICNN`, includes the `SHIPS-RII` baseline
-(stored under the `SHIPS` row in the CSV), and includes any additional named
+with the highest BSS and labels it `HRICNN`, includes both `SHIPS-RII`
+baselines (resampled and non-resampled), and includes any additional named
 rows in `model_metrics.csv`. The five metric
 columns are required for every displayed row. The
 current plot script distinguishes input modes by filename prefix, so its
@@ -185,7 +197,11 @@ Optional arguments include:
 
 The compressed NumPy output contains image SHAP values, predictions, and the
 expected value. SHIPS-enabled checkpoints also contain SHIPS SHAP values, and
-the script prints aggregate image and per-feature SHIPS statistics.
+the script prints aggregate image and per-feature SHIPS statistics. When run
+by `Experiment.sh`, these statistics are also saved for both checkpoints in
+`HRICNN/Results/SHAP_VALUES.txt`; the complete arrays remain in the `.npz`
+archives. The report is overwritten for the first checkpoint and appended for
+the second.
 
 ## Current implementation notes
 

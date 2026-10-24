@@ -2,7 +2,7 @@ library(here)
 
 setwd(here::here("HRICNN"))
 data <- read.csv("BRTK_2000to2019_IMERG_SHIPS-RII.csv")
-trainend <- 2016000000
+trainend <- 2014000000
 
 data_24_R <- data[, grepl(pattern = "Avg24", colnames(data))]
 data_24_L <- data[, c(1,2,3,4,9,10,11,12,18,13,24,25,75,76,79,80,81)]

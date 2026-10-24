@@ -90,8 +90,8 @@ def _normalise_shap_values(values, use_ships):
     return np.asarray(values[0]), np.asarray(values[1])
 
 
-def _print_summary(image_shap, ships_shap):
-    """Print the aggregate SHAP report used by ``SHAP_VALUES.txt``."""
+def _summary_lines(image_shap, ships_shap):
+    """Return the aggregate SHAP report lines for console and file output."""
     summaries = [("Image", image_shap.reshape(len(image_shap), -1).sum(axis=1))]
     if ships_shap is not None:
         ships_shap = ships_shap.reshape(len(ships_shap), -1)
@@ -99,13 +99,35 @@ def _print_summary(image_shap, ships_shap):
             (name, ships_shap[:, index]) for index, name in enumerate(SHIPS_NAMES)
         )
 
+    lines = []
     for name, values in summaries:
-        print(name)
-        print(f"Mean: {np.mean(values)}")
-        print(f"Median: {np.median(values)}")
-        print(f"Max: {np.max(values)}")
-        print(f"Min: {np.min(values)}")
-        print()
+        lines.extend(
+            [
+                name,
+                f"Mean: {np.mean(values)}",
+                f"Median: {np.median(values)}",
+                f"Max: {np.max(values)}",
+                f"Min: {np.min(values)}",
+                "",
+            ]
+        )
+    return lines
+
+
+def _write_shap_summary(path, model_path, image_shap, ships_shap, overwrite=False):
+    """Append aggregate SHAP statistics for one model to a text report."""
+    if path is None:
+        return
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = "w" if overwrite else "a"
+    with path.open(mode, encoding="utf-8") as report:
+        report.write(f"Model: {model_path}\n")
+        report.write("=" * (len(str(model_path)) + 7) + "\n")
+        report.write("\n".join(_summary_lines(image_shap, ships_shap)))
+        if ships_shap is not None:
+            report.write(f"SHIPS features: {json.dumps(SHIPS_NAMES)}\n")
+        report.write("\n")
 
 
 def generate_shap_values(
@@ -115,6 +137,8 @@ def generate_shap_values(
     image_only=False,
     max_background=100,
     max_samples=None,
+    summary_output_path=None,
+    overwrite_summary_output=False,
 ):
     model_path = Path(model_path)
     if not model_path.is_file():
@@ -149,7 +173,15 @@ def generate_shap_values(
     if ships_shap is not None and ships_shap.ndim == 3 and ships_shap.shape[-1] == 1:
         ships_shap = ships_shap[..., 0]
 
-    _print_summary(image_shap, ships_shap)
+    summary_lines = _summary_lines(image_shap, ships_shap)
+    print("\n".join(summary_lines))
+    _write_shap_summary(
+        summary_output_path,
+        model_path,
+        image_shap,
+        ships_shap,
+        overwrite=overwrite_summary_output,
+    )
 
     with torch.no_grad():
         predictions = (
@@ -188,6 +220,16 @@ def main():
     )
     parser.add_argument("--output", type=Path, default=Path("shap_values.npz"))
     parser.add_argument(
+        "--summary-output",
+        type=Path,
+        help="Path to append aggregate SHAP statistics as text.",
+    )
+    parser.add_argument(
+        "--overwrite-summary-output",
+        action="store_true",
+        help="Overwrite the SHAP summary instead of appending to it.",
+    )
+    parser.add_argument(
         "--model-class",
         choices=("Model1", "Model2", "Model3"),
         help="Architecture for a raw state dict without metadata.",
@@ -210,12 +252,14 @@ def main():
     model_path = args.model_path.resolve()
     os.chdir(Path(__file__).resolve().parent.parent)
     generate_shap_values(
-        model_path,
-        args.output,
-        args.model_class,
-        args.image_only,
-        args.max_background,
-        args.max_samples,
+        model_path=model_path,
+        output_path=args.output,
+        model_class=args.model_class,
+        image_only=args.image_only,
+        max_background=args.max_background,
+        max_samples=args.max_samples,
+        summary_output_path=args.summary_output,
+        overwrite_summary_output=args.overwrite_summary_output,
     )
 
 

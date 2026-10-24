@@ -70,15 +70,30 @@ calculate_brier_score <- function(observed, predicted) {
 }
 
 
-calculate_climatological_brier_score <- function(observed) {
-    climatological_probability <- 0.5
+calculate_climatological_brier_score <- function(
+    observed,
+    climatological_probability = mean(observed)
+) {
+    if (length(climatological_probability) != 1 ||
+        is.na(climatological_probability) ||
+        climatological_probability < 0 || climatological_probability > 1) {
+        stop("climatological probability must be a single value between 0 and 1.")
+    }
+
     mean((observed - climatological_probability)^2)
 }
 
 
-calculate_brier_skill_score <- function(observed, predicted) {
+calculate_brier_skill_score <- function(
+    observed,
+    predicted,
+    climatological_probability = mean(observed)
+) {
     brier_score <- calculate_brier_score(observed, predicted)
-    climatological_brier_score <- calculate_climatological_brier_score(observed)
+    climatological_brier_score <- calculate_climatological_brier_score(
+        observed,
+        climatological_probability
+    )
 
     if (climatological_brier_score == 0) {
         stop(
@@ -91,14 +106,15 @@ calculate_brier_skill_score <- function(observed, predicted) {
 }
 
 
-calculate_model_metrics <- function(data) {
+calculate_model_metrics <- function(data, climatological_probability) {
     predicted_classes <- classify_predictions(data$Prediction)
 
     metrics <- list(
         brier_score = calculate_brier_score(data$RI, data$Prediction),
         brier_skill_score = calculate_brier_skill_score(
             data$RI,
-            data$Prediction
+            data$Prediction,
+            climatological_probability
         ),
         pod = calculate_POD(data$RI, predicted_classes),
         far = calculate_FAR(data$RI, predicted_classes),
@@ -174,6 +190,10 @@ save_all_model_metrics <- function(metrics_list, output_path) {
 
 results_directory <- here::here("HRICNN", "Results")
 ships_output_path <- file.path(results_directory, "SHIPS_predictions.csv")
+ships_resample_output_path <- file.path(
+    results_directory,
+    "SHIPS_predictions_resample.csv"
+)
 
 cnn_output_paths <- c(
     "RAIN+SHIPS_Model1" = file.path(
@@ -201,45 +221,69 @@ cnn_data <- lapply(cnn_output_paths, function(path) {
 })
 names(cnn_data) <- names(cnn_output_paths)
 ships_data <- read.csv(ships_output_path, stringsAsFactors = FALSE)
+ships_resample_data <- read.csv(
+    ships_resample_output_path,
+    stringsAsFactors = FALSE
+)
 
 for (model_name in names(cnn_data)) {
     validate_prediction_data(cnn_data[[model_name]], model_name)
 }
 validate_prediction_data(ships_data, "SHIPS_predictions.csv")
+validate_prediction_data(
+    ships_resample_data,
+    "SHIPS_predictions_resample.csv"
+)
 reference_data <- cnn_data[[1]]
 for (model_name in names(cnn_data)[-1]) {
     validate_matching_observations(reference_data, cnn_data[[model_name]])
 }
 validate_matching_observations(reference_data, ships_data)
+validate_matching_observations(reference_data, ships_resample_data)
 
 climatological_probability <- 0.5
 climatological_brier_score <- calculate_climatological_brier_score(
-    reference_data$RI
+    reference_data$RI,
+    climatological_probability
 )
 
-cat("HRICNN prediction metrics\n")
-cat("=========================\n")
-cat(sprintf("Observations: %d\n", nrow(reference_data)))
-cat(sprintf("RI prevalence: %.6f\n", climatological_probability))
-cat(sprintf(
-    "Climatological Brier Score: %.6f\n\n",
-    climatological_brier_score
-))
+metrics_lines <- capture.output({
+    cat("HRICNN prediction metrics\n")
+    cat("=========================\n")
+    cat(sprintf("Observations: %d\n", nrow(reference_data)))
+    cat(sprintf("Reference probability: %.6f\n", climatological_probability))
+    cat(sprintf("Test RI prevalence: %.6f\n", mean(reference_data$RI)))
+    cat(sprintf(
+        "Climatological Brier Score: %.6f\n\n",
+        climatological_brier_score
+    ))
 
-ships_metrics <- print_model_metrics(
-    "SHIPS",
-    calculate_model_metrics(ships_data)
-)
-
-metrics_list <- list()
-for (model_name in names(cnn_data)) {
-    cat("\n")
-    metrics_list[[model_name]] <- print_model_metrics(
-        model_name,
-        calculate_model_metrics(cnn_data[[model_name]])
+    ships_metrics <- print_model_metrics(
+        "SHIPS non-resampled",
+        calculate_model_metrics(ships_data, climatological_probability)
     )
-}
-metrics_list[["SHIPS"]] <- ships_metrics
+    ships_resample_metrics <- print_model_metrics(
+        "SHIPS resampled",
+        calculate_model_metrics(
+            ships_resample_data,
+            climatological_probability
+        )
+    )
+
+    metrics_list <- list(
+        "SHIPS_non_resampled" = ships_metrics,
+        "SHIPS_resampled" = ships_resample_metrics
+    )
+    for (model_name in names(cnn_data)) {
+        cat("\n")
+        metrics_list[[model_name]] <- print_model_metrics(
+            model_name,
+            calculate_model_metrics(cnn_data[[model_name]], climatological_probability)
+        )
+    }
+})
+cat(paste(metrics_lines, collapse = "\n"), "\n", sep = "")
+writeLines(metrics_lines, file.path(results_directory, "METRICS.txt"))
 
 save_all_model_metrics(
     metrics_list,

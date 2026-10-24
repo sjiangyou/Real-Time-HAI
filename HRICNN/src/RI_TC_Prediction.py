@@ -68,7 +68,35 @@ def _model_output_path(path, model_class):
     return path.with_name(f"{path.stem}_{model_class.__name__}{path.suffix}")
 
 
-def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=None):
+def _append_architecture_report(
+    path, image_only, trained_models, best_model_class, overwrite=False
+):
+    """Append the selected model definitions to a human-readable report."""
+    if path is None:
+        return
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode_name = "RAIN" if image_only else "RAIN+SHIPS"
+    mode = "w" if overwrite else "a"
+    with path.open(mode, encoding="utf-8") as report:
+        report.write(f"{mode_name} selected architectures\n")
+        report.write("=" * (len(mode_name) + 23) + "\n\n")
+        report.write(f"Best validation architecture: {best_model_class.__name__}\n\n")
+        for model_class, model in trained_models.items():
+            report.write(f"{model_class.__name__}\n")
+            report.write("-" * len(model_class.__name__) + "\n")
+            report.write(f"{model}\n\n")
+
+
+def main(
+    image_only=False,
+    save_model=None,
+    loss_csv_path=None,
+    output_csv_path=None,
+    architecture_output_path=None,
+    overwrite_architecture_output=False,
+):
     gpu_test()
 
     if loss_csv_path is None:
@@ -138,6 +166,14 @@ def main(image_only=False, save_model=None, loss_csv_path=None, output_csv_path=
             f"Best {best_model_class.__name__} checkpoint saved as "
             f"{best_model_alias} for SHAP analysis"
         )
+
+    _append_architecture_report(
+        architecture_output_path,
+        image_only,
+        trained_models,
+        best_model_class,
+        overwrite=overwrite_architecture_output,
+    )
 
     return trained_models
 
@@ -434,12 +470,19 @@ def binary_accuracy(preds, targets):
     return (predictions == targets).float().mean().item()
 
 
-def calculate_overall_score(predictions, labels, boundary=CLASSIFICATION_BOUNDARY):
-    """Calculate OS = BSS + POD - FAR + PSS for binary RI predictions.
+def calculate_overall_score(
+    predictions,
+    labels,
+    boundary=CLASSIFICATION_BOUNDARY,
+    reference_probability=None,
+):
+    """Calculate BSS and OS for binary RI predictions.
 
-    The climatological reference assigns each of the two categories a
-    probability of 1 / 2. Probability-based Brier metrics use the model's
-    continuous predictions; threshold-based metrics use ``boundary``.
+    ``reference_probability`` is the RI probability used for
+    the reference Brier Score. When omitted, it is estimated from ``labels``
+    for backwards compatibility. The HRICNN workflow passes the fixed
+    prevalence from the corresponding training fold so validation labels do
+    reference probability of 0.5.
     """
     predictions = np.asarray(predictions, dtype=np.float64).reshape(-1)
     labels = np.asarray(labels, dtype=np.float64).reshape(-1)
@@ -451,12 +494,15 @@ def calculate_overall_score(predictions, labels, boundary=CLASSIFICATION_BOUNDAR
         raise ValueError("Predictions must be probabilities between 0 and 1.")
     if np.any((labels != 0) & (labels != 1)):
         raise ValueError("Labels must be binary values.")
+    if reference_probability is None:
+        reference_probability = float(np.mean(labels))
+    if not 0 <= reference_probability <= 1:
+        raise ValueError("The reference probability must be between 0 and 1.")
 
     brier_score = np.mean((labels - predictions) ** 2)
-    reference_probability = 1.0 / 2.0
     reference_brier_score = np.mean((labels - reference_probability) ** 2)
     if reference_brier_score == 0:
-        raise ValueError("The uniform climatological Brier Score is zero.")
+        raise ValueError("The climatological reference Brier Score is zero.")
     brier_skill_score = 1.0 - brier_score / reference_brier_score
 
     predicted_classes = predictions >= boundary
@@ -620,7 +666,7 @@ def select_hyperparameters(
     never passed to this function. Each distinct training year is held out in
     turn. Year-level metrics are averaged equally, so years with more samples
     do not dominate selection. Hyperparameters are selected by maximizing the
-    overall score (OS = BSS + POD - FAR + PSS). All architecture/batch
+    Brier Skill Score (BSS). All architecture/batch
     combinations are evaluated through epoch 10 first; only the best batch
     size for each architecture is evaluated beyond epoch 10.
     The returned list contains one selected configuration per architecture.
@@ -719,7 +765,11 @@ def select_hyperparameters(
                 validation_loss, _, _, predictions, labels = evaluate_model(
                     model, validation_loader, criterion
                 )
-                metrics = calculate_overall_score(predictions, labels)
+                metrics = calculate_overall_score(
+                    predictions,
+                    labels,
+                    reference_probability=0.5,
+                )
                 fold_metrics["Loss"][fold_index, epoch] = validation_loss
                 for name, value in metrics.items():
                     fold_metrics[name][fold_index, epoch] = value
@@ -739,7 +789,7 @@ def select_hyperparameters(
     )
 
     # Stage one evaluates every architecture/batch pair only through epoch 10.
-    # This identifies one promising batch size for each architecture by OS.
+    # This identifies one promising batch size for each architecture by BSS.
     stage_one_best_batches = {}
     for model_index, model_class in enumerate(model_classes):
         best_batch_index = None
@@ -780,15 +830,15 @@ def select_hyperparameters(
                     validation_metrics[name][model_index, batch_index, epoch_index] = (
                         mean_metrics[name][epoch_index]
                     )
-                scores[model_index, batch_index, epoch_index] = mean_metrics["OS"][
+                scores[model_index, batch_index, epoch_index] = mean_metrics["BSS"][
                     epoch_index
                 ]
             print(
                 f"Validation architecture {model_class.__name__}, "
                 f"batch size {batch_size} complete; "
-                f"stage-one best OS={np.max(mean_metrics['OS'][:stage_one_epochs]):.6f}"
+                f"stage-one best BSS={np.max(mean_metrics['BSS'][:stage_one_epochs]):.6f}"
             )
-            stage_one_score = np.max(mean_metrics["OS"][:stage_one_epochs])
+            stage_one_score = np.max(mean_metrics["BSS"][:stage_one_epochs])
             if stage_one_score > best_stage_one_score:
                 best_stage_one_score = stage_one_score
                 best_batch_index = batch_index
@@ -800,7 +850,7 @@ def select_hyperparameters(
 
     # Stage two searches epoch counts only for the best batch size per
     # architecture. The selected configurations are retrained from epoch one
-    # so their later-epoch OS values remain directly comparable.
+    # so their later-epoch BSS values remain directly comparable.
     for model_index, model_class in enumerate(model_classes):
         batch_index = stage_one_best_batches[model_index]
         batch_size = batch_size_candidates[batch_index]
@@ -841,7 +891,7 @@ def select_hyperparameters(
                 validation_metrics[name][model_index, batch_index, epoch_index] = (
                     mean_metrics[name][epoch_index]
                 )
-            scores[model_index, batch_index, epoch_index] = mean_metrics["OS"][
+            scores[model_index, batch_index, epoch_index] = mean_metrics["BSS"][
                 epoch_index
             ]
         print(
@@ -859,13 +909,13 @@ def select_hyperparameters(
         )
         best_batch_size = batch_size_candidates[batch_index]
         best_epochs = epoch_index + 1
-        validation_os = model_scores[batch_index, epoch_index]
+        validation_bss = model_scores[batch_index, epoch_index]
         selected_hyperparameters.append(
             {
                 "model_class": model_class,
                 "epochs": best_epochs,
                 "batch_size": best_batch_size,
-                "validation_os": validation_os,
+                "validation_bss": validation_bss,
             }
         )
         best_hyperparameter_rows.append(
@@ -888,13 +938,15 @@ def select_hyperparameters(
                 "Validation_PSS": validation_metrics["PSS"][
                     model_index, batch_index, epoch_index
                 ],
-                "Validation_OS": validation_os,
+                "Validation_OS": validation_metrics["OS"][
+                    model_index, batch_index, epoch_index
+                ],
             }
         )
         print(
             f"Selected hyperparameters for {model_class.__name__}: "
             f"epochs={best_epochs}; batch size={best_batch_size}; "
-            f"validation OS={validation_os:.6f}"
+            f"validation BSS={validation_bss:.6f}"
         )
 
     pd.DataFrame(best_hyperparameter_rows).to_csv(
@@ -978,7 +1030,7 @@ def run_models(
 
     best_model_class = max(
         selected_hyperparameters,
-        key=lambda selection: selection["validation_os"],
+        key=lambda selection: selection["validation_bss"],
     )["model_class"]
     return trained_models, predictions_by_model, best_model_class
 
@@ -1012,6 +1064,16 @@ if __name__ == "__main__":
         type=Path,
         help="Path to save the test dataframe with model predictions.",
     )
+    parser.add_argument(
+        "--architecture-output-path",
+        type=Path,
+        help="Path to append the selected architecture definitions.",
+    )
+    parser.add_argument(
+        "--overwrite-architecture-output",
+        action="store_true",
+        help="Overwrite the architecture report instead of appending to it.",
+    )
     args = parser.parse_args()
     # Resolve output paths before changing directories so relative paths are
     # always relative to the directory from which the command was launched.
@@ -1020,6 +1082,8 @@ if __name__ == "__main__":
     args.loss_csv_path = args.loss_csv_path.resolve()
     if args.output_csv_path is not None:
         args.output_csv_path = args.output_csv_path.resolve()
+    if args.architecture_output_path is not None:
+        args.architecture_output_path = args.architecture_output_path.resolve()
     os.chdir(Path(__file__).parent.parent)
     seed_everything(seed=42)
     main(
@@ -1027,4 +1091,6 @@ if __name__ == "__main__":
         save_model=args.save_model,
         loss_csv_path=args.loss_csv_path,
         output_csv_path=args.output_csv_path,
+        architecture_output_path=args.architecture_output_path,
+        overwrite_architecture_output=args.overwrite_architecture_output,
     )
